@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexusai-frontend
+  namespace: nexusai
+  labels:
+    app: nexusai-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexusai-frontend
+  template:
+    metadata:
+      labels:
+        app: nexusai-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: nexusai/frontend:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://nexusai-backend-service:8000"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexusai-frontend-service
+  namespace: nexusai
+spec:
+  selector:
+    app: nexusai-frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP

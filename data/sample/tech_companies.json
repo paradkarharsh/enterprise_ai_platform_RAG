@@ -1,0 +1,130 @@
+[
+  {
+    "name": "Google",
+    "type": "Organization",
+    "founded": "1998",
+    "headquarters": "Mountain View, CA",
+    "ceo": "Sundar Pichai",
+    "employees": 182000,
+    "products": ["Search", "Android", "Chrome", "Cloud", "Gemini", "DeepMind"],
+    "relationships": [
+      {"target": "Alphabet", "type": "SUBSIDIARY_OF"},
+      {"target": "DeepMind", "type": "ACQUIRED", "year": 2014},
+      {"target": "Sundar Pichai", "type": "LED_BY"},
+      {"target": "Mountain View", "type": "HEADQUARTERED_IN"},
+      {"target": "Microsoft", "type": "COMPETES_WITH"},
+      {"target": "Gemini", "type": "DEVELOPED"},
+      {"target": "TensorFlow", "type": "CREATED"}
+    ]
+  },
+  {
+    "name": "Microsoft",
+    "type": "Organization",
+    "founded": "1975",
+    "headquarters": "Redmond, WA",
+    "ceo": "Satya Nadella",
+    "employees": 221000,
+    "products": ["Windows", "Azure", "Office 365", "GitHub", "Copilot", "Teams"],
+    "relationships": [
+      {"target": "OpenAI", "type": "INVESTED_IN", "amount": "$13B"},
+      {"target": "GitHub", "type": "ACQUIRED", "year": 2018},
+      {"target": "LinkedIn", "type": "ACQUIRED", "year": 2016},
+      {"target": "Satya Nadella", "type": "LED_BY"},
+      {"target": "Redmond", "type": "HEADQUARTERED_IN"},
+      {"target": "Google", "type": "COMPETES_WITH"},
+      {"target": "Copilot", "type": "DEVELOPED"}
+    ]
+  },
+  {
+    "name": "Apple",
+    "type": "Organization",
+    "founded": "1976",
+    "headquarters": "Cupertino, CA",
+    "ceo": "Tim Cook",
+    "employees": 161000,
+    "products": ["iPhone", "Mac", "iPad", "Apple Watch", "Vision Pro", "Apple Intelligence"],
+    "relationships": [
+      {"target": "Tim Cook", "type": "LED_BY"},
+      {"target": "Cupertino", "type": "HEADQUARTERED_IN"},
+      {"target": "Samsung", "type": "COMPETES_WITH"},
+      {"target": "Apple Intelligence", "type": "DEVELOPED"}
+    ]
+  },
+  {
+    "name": "OpenAI",
+    "type": "Organization",
+    "founded": "2015",
+    "headquarters": "San Francisco, CA",
+    "ceo": "Sam Altman",
+    "products": ["GPT-4", "ChatGPT", "DALL-E", "Whisper", "Codex"],
+    "relationships": [
+      {"target": "Sam Altman", "type": "LED_BY"},
+      {"target": "Microsoft", "type": "FUNDED_BY"},
+      {"target": "GPT-4", "type": "DEVELOPED"},
+      {"target": "ChatGPT", "type": "DEVELOPED"},
+      {"target": "San Francisco", "type": "HEADQUARTERED_IN"},
+      {"target": "Anthropic", "type": "COMPETES_WITH"},
+      {"target": "Google", "type": "COMPETES_WITH"}
+    ]
+  },
+  {
+    "name": "Meta",
+    "type": "Organization",
+    "founded": "2004",
+    "headquarters": "Menlo Park, CA",
+    "ceo": "Mark Zuckerberg",
+    "products": ["Facebook", "Instagram", "WhatsApp", "Llama", "Quest"],
+    "relationships": [
+      {"target": "Mark Zuckerberg", "type": "LED_BY"},
+      {"target": "Menlo Park", "type": "HEADQUARTERED_IN"},
+      {"target": "Llama", "type": "DEVELOPED"},
+      {"target": "Instagram", "type": "ACQUIRED", "year": 2012},
+      {"target": "WhatsApp", "type": "ACQUIRED", "year": 2014}
+    ]
+  },
+  {
+    "name": "Anthropic",
+    "type": "Organization",
+    "founded": "2021",
+    "headquarters": "San Francisco, CA",
+    "ceo": "Dario Amodei",
+    "products": ["Claude", "Claude 3.5 Sonnet", "Constitutional AI"],
+    "relationships": [
+      {"target": "Dario Amodei", "type": "LED_BY"},
+      {"target": "Amazon", "type": "FUNDED_BY", "amount": "$4B"},
+      {"target": "Google", "type": "FUNDED_BY", "amount": "$2B"},
+      {"target": "Claude", "type": "DEVELOPED"},
+      {"target": "OpenAI", "type": "COMPETES_WITH"}
+    ]
+  },
+  {
+    "name": "NVIDIA",
+    "type": "Organization",
+    "founded": "1993",
+    "headquarters": "Santa Clara, CA",
+    "ceo": "Jensen Huang",
+    "products": ["H100", "A100", "CUDA", "DGX", "Omniverse"],
+    "relationships": [
+      {"target": "Jensen Huang", "type": "LED_BY"},
+      {"target": "Santa Clara", "type": "HEADQUARTERED_IN"},
+      {"target": "H100", "type": "DEVELOPED"},
+      {"target": "CUDA", "type": "CREATED"},
+      {"target": "AMD", "type": "COMPETES_WITH"}
+    ]
+  },
+  {
+    "name": "Amazon",
+    "type": "Organization",
+    "founded": "1994",
+    "headquarters": "Seattle, WA",
+    "ceo": "Andy Jassy",
+    "products": ["AWS", "Alexa", "Prime", "Bedrock", "SageMaker"],
+    "relationships": [
+      {"target": "Andy Jassy", "type": "LED_BY"},
+      {"target": "Seattle", "type": "HEADQUARTERED_IN"},
+      {"target": "Anthropic", "type": "INVESTED_IN"},
+      {"target": "AWS", "type": "DEVELOPED"},
+      {"target": "Microsoft", "type": "COMPETES_WITH"}
+    ]
+  }
+]

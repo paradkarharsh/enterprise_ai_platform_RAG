@@ -1,0 +1,23 @@
+Retrieval-Augmented Generation (RAG) is a technique that combines information retrieval with text generation.
+
+RAG systems work by first retrieving relevant documents from a knowledge base, then using those documents as context for a large language model to generate accurate, grounded responses.
+
+Key benefits of RAG include:
+1. Reduced hallucinations - responses are grounded in real data
+2. Up-to-date information - the knowledge base can be updated without retraining
+3. Source attribution - users can verify claims against original documents
+4. Domain specificity - custom knowledge bases enable specialized expertise
+
+The RAG pipeline typically consists of:
+- Document ingestion and chunking
+- Embedding generation using models like BGE or OpenAI
+- Vector storage in databases like ChromaDB or Pinecone
+- Query embedding and similarity search
+- Context assembly and LLM response generation
+
+Advanced RAG techniques include:
+- Hybrid search combining dense and sparse retrieval
+- Query rewriting and expansion
+- Cross-encoder reranking for improved precision
+- Knowledge graph integration for structured reasoning
+- Multi-hop reasoning across multiple documents
