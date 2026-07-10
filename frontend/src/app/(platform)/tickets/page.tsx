@@ -32,7 +32,7 @@ export default function TicketsPage() {
   const fetchTickets = async () => {
     setIsLoading(true);
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
       const res = await fetch(`${API_BASE}/api/v1/tickets`);
       if (res.ok) {
         const data = await res.json();
@@ -51,7 +51,7 @@ export default function TicketsPage() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
       await fetch(`${API_BASE}/api/v1/tickets/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
