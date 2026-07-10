@@ -18,12 +18,17 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
-    return [
-      {
-        source: "/api/v1/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/:path*`,
-      },
-    ];
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    // Only add rewrite if URL is valid
+    if (apiUrl.startsWith("http://") || apiUrl.startsWith("https://")) {
+      return [
+        {
+          source: "/api/v1/:path*",
+          destination: `${apiUrl}/api/v1/:path*`,
+        },
+      ];
+    }
+    return [];
   },
 };
 
