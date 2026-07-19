@@ -32,6 +32,14 @@ async def lifespan(app: FastAPI):
     """Application lifecycle: startup and shutdown."""
     logger.info("🚀 Starting Enterprise AI Knowledge Platform v%s", settings.APP_VERSION)
 
+    # Create data directories
+    from pathlib import Path
+    base_dir = Path(__file__).resolve().parent.parent  # backend/
+    for dir_name in ["data/uploads", "data/chroma", "data/faiss_index", settings.UPLOADS_ABSOLUTE_DIR]:
+        dir_path = base_dir / dir_name if not Path(dir_name).is_absolute() else Path(dir_name)
+        dir_path.mkdir(parents=True, exist_ok=True)
+        logger.info("📁 Ensured directory exists: %s", dir_path)
+
     # Initialize database connections
     await init_db()
     await init_redis()

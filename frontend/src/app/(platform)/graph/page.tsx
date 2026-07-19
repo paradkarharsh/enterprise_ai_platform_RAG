@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GitBranch, Circle, ArrowRight, Maximize2, Filter, Loader2 } from "lucide-react";
 import ReactFlow, { Background, Controls, MarkerType, useNodesState, useEdgesState, Node, Edge } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { useToastStore } from "@/lib/store";
+import { useToastStore, useAuthStore } from "@/lib/store";
+import { api } from "@/lib/api";
 
 const getEntityColor = (type: string) => {
   switch (type) {
@@ -14,6 +15,14 @@ const getEntityColor = (type: string) => {
     case "SYSTEM": return "var(--slate-300)";
     default: return "var(--cobalt)";
   }
+};
+
+const normalizeType = (type: string) => {
+  const t = type.toUpperCase();
+  if (["ORGANIZATION", "ORG"].includes(t)) return "ORG";
+  if (["PERSON", "LOCATION", "SYSTEM"].includes(t)) return "SYSTEM";
+  if (["EVENT", "DOCUMENT", "DOC"].includes(t)) return "DOC";
+  return "CONCEPT";
 };
 
 const initialEntities = [
@@ -44,6 +53,44 @@ export default function GraphPage() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  const token = useAuthStore((state) => state.token);
+
+  useEffect(() => {
+    const fetchGraphData = async () => {
+      if (!token) return;
+      try {
+        const res = await api.graph.all(token || undefined);
+        if (res && Array.isArray(res.nodes) && res.nodes.length > 0) {
+          const mappedRels = res.edges.map((edge) => ({
+            from: edge.source,
+            to: edge.target,
+            relation: edge.type,
+          }));
+
+          const connectionCounts: Record<string, number> = {};
+          mappedRels.forEach((rel) => {
+            connectionCounts[rel.from] = (connectionCounts[rel.from] || 0) + 1;
+            connectionCounts[rel.to] = (connectionCounts[rel.to] || 0) + 1;
+          });
+
+          const mappedEntities = res.nodes.map((node) => ({
+            id: node.id,
+            name: node.name,
+            type: normalizeType(node.label),
+            connections: connectionCounts[node.name] || 0,
+            color: getEntityColor(normalizeType(node.label)),
+          }));
+
+          setEntitiesList(mappedEntities);
+          setRelationshipsList(mappedRels);
+        }
+      } catch (err) {
+        console.error("Failed to load graph database data:", err);
+      }
+    };
+    fetchGraphData();
+  }, [token]);
 
   // Generate ReactFlow layout
   const generateLayout = (entitiesToRender: typeof entitiesList, relsToRender: typeof relationshipsList) => {
@@ -92,38 +139,39 @@ export default function GraphPage() {
 
   const { addToast } = useToastStore();
 
-  const handleExploreFullGraph = () => {
+  const handleExploreFullGraph = async () => {
     if (isExploring) return;
     setIsExploring(true);
     addToast("Querying graph database for additional clusters...", "info");
-    setTimeout(() => {
+    try {
+      const res = await api.graph.all(token || undefined);
       setIsExploring(false);
-      addToast("Successfully linked 4 new entities and 4 relationships", "success");
-      
-      const newEntities = [
-        { id: "9", name: "LangGraph Agent", type: "SYSTEM", connections: 6, color: "#bec6e0" },
-        { id: "10", name: "Neo4j Cypher Engine", type: "SYSTEM", connections: 4, color: "#bec6e0" },
-        { id: "11", name: "Vector Index Store", type: "SYSTEM", connections: 5, color: "#bec6e0" },
-        { id: "12", name: "Entity Extractor", type: "CONCEPT", connections: 3, color: "#2e5bff" },
-      ];
-      const newRels = [
-        { from: "RAG Pipeline v2.3", to: "LangGraph Agent", relation: "ORCHESTRATES" },
-        { from: "LangGraph Agent", to: "Neo4j Cypher Engine", relation: "QUERIES" },
-        { from: "Neo4j Cypher Engine", to: "GPT-4 Architecture", relation: "ENRICHES" },
-        { from: "Vector Index Store", to: "RAG Pipeline v2.3", relation: "BACKS" },
-      ];
-      
-      setEntitiesList((prev) => {
-        const existingNames = new Set(prev.map(e => e.name));
-        const filteredNew = newEntities.filter(e => !existingNames.has(e.name));
-        return [...prev, ...filteredNew];
-      });
-      setRelationshipsList((prev) => {
-        const existingKey = new Set(prev.map(r => `${r.from}-${r.to}`));
-        const filteredNew = newRels.filter(r => !existingKey.has(`${r.from}-${r.to}`));
-        return [...prev, ...filteredNew];
-      });
-    }, 1500);
+      if (res && Array.isArray(res.nodes)) {
+        addToast(`Successfully linked ${res.nodes.length} entities and ${res.edges.length} relationships`, "success");
+        const mappedRels = res.edges.map((edge) => ({
+          from: edge.source,
+          to: edge.target,
+          relation: edge.type,
+        }));
+        const connectionCounts: Record<string, number> = {};
+        mappedRels.forEach((rel) => {
+          connectionCounts[rel.from] = (connectionCounts[rel.from] || 0) + 1;
+          connectionCounts[rel.to] = (connectionCounts[rel.to] || 0) + 1;
+        });
+        const mappedEntities = res.nodes.map((node) => ({
+          id: node.id,
+          name: node.name,
+          type: normalizeType(node.label),
+          connections: connectionCounts[node.name] || 0,
+          color: getEntityColor(normalizeType(node.label)),
+        }));
+        setEntitiesList(mappedEntities);
+        setRelationshipsList(mappedRels);
+      }
+    } catch (err) {
+      setIsExploring(false);
+      addToast("Failed to query additional graph database clusters", "error");
+    }
   };
 
   const toggleEntityType = (type: string) => {
@@ -139,9 +187,9 @@ export default function GraphPage() {
   });
 
   // Update layout when filters change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     generateLayout(filteredEntities, filteredRelationships);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEntityTypes, entitiesList, relationshipsList]);
 
   return (
@@ -248,9 +296,9 @@ export default function GraphPage() {
               display: "flex", gap: 12,
             }}>
               {[
-                { label: "ENTITIES", value: (filteredEntities.length * 15).toLocaleString() },
-                { label: "RELATIONS", value: (filteredRelationships.length * 25).toLocaleString() },
-                { label: "CLUSTERS", value: "24" },
+                { label: "ENTITIES", value: filteredEntities.length.toLocaleString() },
+                { label: "RELATIONS", value: filteredRelationships.length.toLocaleString() },
+                { label: "CLUSTERS", value: Math.ceil(filteredEntities.length / 3).toLocaleString() },
               ].map((stat, i) => (
                 <div key={i} style={{
                   padding: "8px 14px", borderRadius: "var(--radius-sm)",
@@ -276,7 +324,7 @@ export default function GraphPage() {
             <div style={{ flex: 1, overflowY: "auto", maxHeight: "320px" }}>
               {filteredEntities.map((entity, i) => (
                 <motion.div
-                  key={entity.name}
+                  key={entity.id}
                   initial={{ opacity: 0, x: 8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.02 }}
@@ -330,7 +378,7 @@ export default function GraphPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filteredRelationships.map((rel, i) => (
               <motion.div
-                key={`${rel.from}-${rel.to}`}
+                key={`${rel.from}-${rel.to}-${i}`}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.04 }}

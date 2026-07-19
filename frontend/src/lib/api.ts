@@ -42,7 +42,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 export const api = {
   // Auth
   auth: {
-    register: (data: { email: string; username: string; password: string }) =>
+    register: (data: { email: string; username: string; password: string; full_name?: string }) =>
       request("/auth/register", { method: "POST", body: data }),
     login: (data: { email: string; password: string }) =>
       request("/auth/login", { method: "POST", body: data }),
@@ -57,7 +57,7 @@ export const api = {
   // Chat
   chat: {
     send: (data: { message: string; conversation_id?: string; model?: string; provider?: string }, token?: string) =>
-      request("/chat/", { method: "POST", body: data, token }),
+      request("/chat", { method: "POST", body: data, token }),
     conversations: (token: string) =>
       request("/chat/conversations", { token }),
     messages: (conversationId: string, token: string) =>
@@ -67,7 +67,7 @@ export const api = {
   // Search
   search: {
     query: (data: { query: string; search_type?: string; top_k?: number }, token?: string) =>
-      request("/search/", { method: "POST", body: data, token }),
+      request("/search", { method: "POST", body: data, token }),
   },
 
   // Upload
@@ -75,7 +75,7 @@ export const api = {
     document: async (file: File, token: string) => {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch(`${API_BASE}${API_PREFIX}/upload/`, {
+      const res = await fetch(`${API_BASE}${API_PREFIX}/upload`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -83,6 +83,12 @@ export const api = {
       if (!res.ok) throw new Error("Upload failed");
       return res.json();
     },
+    list: (token: string) =>
+      request<Record<string, unknown>[]>("/upload", { token }),
+    status: (id: string, token: string) =>
+      request<Record<string, unknown>>(`/upload/${id}`, { token }),
+    delete: (id: string, token: string) =>
+      request<Record<string, unknown>>(`/upload/${id}`, { method: "DELETE", token }),
   },
 
   // Graph
@@ -93,6 +99,8 @@ export const api = {
       request("/graph/stats", { token }),
     searchEntities: (query: string) =>
       request(`/graph/search/${encodeURIComponent(query)}`),
+    all: (token?: string) =>
+      request<{ nodes: any[]; edges: any[] }>("/graph/all", { token }),
   },
 
   // Analytics
@@ -101,6 +109,24 @@ export const api = {
       request("/analytics/dashboard", { token }),
     queryMetrics: (token: string) =>
       request("/analytics/query-metrics", { token }),
+  },
+
+  // Tickets
+  tickets: {
+    list: (token: string) =>
+      request<Record<string, unknown>[]>("/tickets", { token }),
+    create: (data: { department: string; summary: string; priority?: string }, token: string) =>
+      request<Record<string, unknown>>("/tickets", { method: "POST", body: data, token }),
+    update: (id: string, data: { status?: string; priority?: string; assigned_agent_id?: string }, token: string) =>
+      request<Record<string, unknown>>(`/tickets/${id}`, { method: "PATCH", body: data, token }),
+  },
+
+  // Reindex
+  reindex: {
+    all: (token: string) =>
+      request<Record<string, unknown>>("/reindex", { method: "POST", token }),
+    document: (id: string, token: string) =>
+      request<Record<string, unknown>>(`/reindex/${id}`, { method: "POST", token }),
   },
 
   // Health

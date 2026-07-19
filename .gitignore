@@ -80,6 +80,10 @@ pytestdebug.log
 # Logs and databases
 *.log
 *.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
 celerybeat-schedule
 celerybeat.pid
 

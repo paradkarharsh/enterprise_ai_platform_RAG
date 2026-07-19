@@ -53,6 +53,12 @@ async def extract_entities_and_relationships(
         if content.startswith("```"):
             content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 
+        # Robust JSON extractor (find first { and last })
+        start_idx = content.find('{')
+        end_idx = content.rfind('}')
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            content = content[start_idx:end_idx+1]
+
         data = json.loads(content)
 
         entities = [Entity(**e) for e in data.get("entities", [])]

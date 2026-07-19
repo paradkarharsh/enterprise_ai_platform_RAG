@@ -318,8 +318,9 @@ async def response_agent(state: AgentState) -> AgentState:
         # Build context
         context_parts = []
         if graph_context:
-            context_parts.append(f"**Knowledge Graph Context:**\n{graph_context}")
+            context_parts.append(f"**Knowledge Graph Context (Entity Relationships):**\n{graph_context}")
         if sources:
+            context_parts.append("**Retrieved Document Chunks:**")
             for i, s in enumerate(sources[:7]):
                 context_parts.append(f"**[Source {i+1}]** (Score: {s.get('score', 0):.2f})\n{s['content']}")
 
@@ -352,12 +353,11 @@ async def response_agent(state: AgentState) -> AgentState:
 {specialized_roles}
 
 Rules:
-1. Use information ONLY from the provided context
-2. Cite sources using [Source N] format
-3. Format response in clear Markdown
-4. If context is insufficient, say so honestly
-5. Include a confidence level at the end
-6. Be thorough but concise{escalation_msg}
+1. Provide a comprehensive, natural, and direct answer to the user's query based ONLY on the provided context.
+2. Cite sources using [Source N] format.
+3. Format response in clear Markdown with headings, bullet points, and structured sections where appropriate, but prioritize conversational flow.
+4. If context is insufficient, say so honestly.
+5. Include a confidence level at the end.{escalation_msg}
 
 Context:
 {context}"""),
@@ -373,7 +373,7 @@ Context:
             provider_name=state.get("provider"),
             model=state.get("model"),
             temperature=0.7,
-            max_tokens=4096,
+            max_tokens=8192,
         )
 
         state["response"] = response.content
@@ -470,22 +470,51 @@ async def run_agent_pipeline(
 # ─────────────────────────────────────────────
 from langgraph.graph import StateGraph, START, END
 
+async def parallel_retrieval_agent(state: AgentState) -> AgentState:
+    """Agent: Run Knowledge Graph and Retriever agents in parallel."""
+    import asyncio
+    
+    state_kg = state.copy()
+    state_ret = state.copy()
+    state_kg["agent_trace"] = list(state.get("agent_trace", []))
+    state_ret["agent_trace"] = list(state.get("agent_trace", []))
+    
+    results = await asyncio.gather(
+        knowledge_graph_agent(state_kg),
+        retriever_agent(state_ret)
+    )
+    
+    res_kg, res_ret = results
+    
+    state["cypher_query"] = res_kg.get("cypher_query")
+    state["graph_results"] = res_kg.get("graph_results")
+    state["graph_context"] = res_kg.get("graph_context")
+    state["retrieved_chunks"] = res_ret.get("retrieved_chunks")
+    state["retrieval_strategy"] = res_ret.get("retrieval_strategy")
+    
+    traces = list(state.get("agent_trace", []))
+    kg_new_traces = res_kg.get("agent_trace", [])[len(traces):]
+    ret_new_traces = res_ret.get("agent_trace", [])[len(traces):]
+    traces.extend(kg_new_traces)
+    traces.extend(ret_new_traces)
+    state["agent_trace"] = traces
+    return state
+
+
 # Initialize StateGraph with the state schema
 workflow = StateGraph(AgentState)
 
 # Add pipeline agents as nodes
 workflow.add_node("query_understanding", query_understanding_agent)
-workflow.add_node("knowledge_graph", knowledge_graph_agent)
-workflow.add_node("retriever", retriever_agent)
+workflow.add_node("parallel_retrieval", parallel_retrieval_agent)
 workflow.add_node("reranker", reranker_agent)
 workflow.add_node("verifier", verification_agent)
 workflow.add_node("response", response_agent)
 
 # Set up sequential progression flow
 workflow.add_edge(START, "query_understanding")
-workflow.add_edge("query_understanding", "knowledge_graph")
-workflow.add_edge("knowledge_graph", "retriever")
-workflow.add_edge("retriever", "reranker")
+workflow.add_edge("query_understanding", "parallel_retrieval")
+workflow.add_edge("parallel_retrieval", "reranker")
 workflow.add_edge("reranker", "verifier")
 workflow.add_edge("verifier", "response")
 workflow.add_edge("response", END)

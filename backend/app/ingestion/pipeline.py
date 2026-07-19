@@ -184,6 +184,19 @@ async def parse_website(url: str) -> ParsedDocument:
         raise
 
 
+async def parse_markdown(file_path: str) -> ParsedDocument:
+    """Parse Markdown document."""
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        content = f.read()
+    return ParsedDocument(
+        title=os.path.basename(file_path),
+        content=content,
+        pages=[content],
+        page_count=1,
+        metadata={"source_type": "markdown", "file_path": file_path},
+    )
+
+
 PARSERS = {
     ".pdf": parse_pdf,
     ".docx": parse_docx,
@@ -192,6 +205,8 @@ PARSERS = {
     ".csv": parse_csv,
     ".xlsx": parse_excel,
     ".xls": parse_excel,
+    ".md": parse_markdown,
+    ".markdown": parse_markdown,
 }
 
 

@@ -1,26 +1,43 @@
 "use client";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search as SearchIcon, FileText, Star, Tag, X, Copy, MessageSquare, ArrowLeft } from "lucide-react";
-import { useToastStore, useChatStore } from "@/lib/store";
+import { Search as SearchIcon, FileText, Star, Tag, X, Copy, MessageSquare, ArrowLeft, Loader2 } from "lucide-react";
+import { useToastStore, useChatStore, useAuthStore } from "@/lib/store";
 import { useRouter } from "next/navigation";
+import { api } from "@/lib/api";
 
 const sourceFilters = ["All", "PDF", "DOCX", "Web", "CSV", "Email"];
-const mockResults = [
-  { id: "1", title: "Google AI Research Paper 2024", content: "Google's latest research on large language models demonstrates significant improvements in reasoning capabilities through chain-of-thought prompting and multi-agent architectures...", score: 0.95, source: "PDF", date: "2024-03-15", highlights: ["chain-of-thought prompting", "multi-agent architectures"] },
-  { id: "2", title: "Microsoft Azure AI Platform Overview", content: "Microsoft's enterprise AI platform integrates seamlessly with existing infrastructure, providing tools for model deployment, monitoring, and governance at scale...", score: 0.89, source: "Web", date: "2024-02-20", highlights: ["enterprise AI platform", "model deployment"] },
-  { id: "3", title: "Apple Silicon ML Performance Benchmarks", content: "The latest Apple Silicon chips show remarkable performance improvements for on-device machine learning inference, with the Neural Engine processing up to 35 TOPS...", score: 0.82, source: "PDF", date: "2024-01-10", highlights: ["Apple Silicon", "machine learning inference"] },
-];
+interface SearchResult {
+  id: string;
+  title: string;
+  content: string;
+  score: number;
+  source: string;
+  date: string;
+  highlights: string[];
+}
+
+interface ApiResult {
+  id: string;
+  title?: string;
+  content?: string;
+  score?: number;
+  source_type?: string;
+  metadata?: { created_at?: string };
+  highlights?: string[];
+}
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
-  const [results, setResults] = useState(mockResults);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [selectedResult, setSelectedResult] = useState<typeof mockResults[0] | null>(null);
+  const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const { addToast } = useToastStore();
   const { addMessage } = useChatStore();
+  const token = useAuthStore((s) => s.token);
   const router = useRouter();
 
   const handleSearch = () => {
@@ -30,20 +47,35 @@ export default function SearchPage() {
     }
   };
 
-  const performSearch = (q: string, filter: string) => {
-    let filtered = mockResults;
-    if (q.trim()) {
-      const lq = q.toLowerCase();
-      filtered = filtered.filter(
-        (r) =>
-          r.title.toLowerCase().includes(lq) ||
-          r.content.toLowerCase().includes(lq)
-      );
+  const performSearch = async (q: string, filter: string) => {
+    if (!q.trim()) return;
+    setLoading(true);
+    try {
+      const res = (await api.search.query({
+        query: q,
+        search_type: "hybrid",
+        top_k: 20
+      }, token || undefined)) as any[];
+
+      let items = res.map((r: ApiResult) => ({
+        id: r.id,
+        title: r.title || "Untitled Document",
+        content: r.content || "",
+        score: r.score || 0.0,
+        source: r.source_type || "PDF",
+        date: r.metadata?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0],
+        highlights: r.highlights || []
+      }));
+
+      if (filter !== "All") {
+        items = items.filter((r: SearchResult) => r.source.toLowerCase() === filter.toLowerCase());
+      }
+      setResults(items);
+    } catch (err: unknown) {
+      addToast((err as Error).message || "Failed to execute search", "error");
+    } finally {
+      setLoading(false);
     }
-    if (filter !== "All") {
-      filtered = filtered.filter((r) => r.source === filter);
-    }
-    setResults(filtered);
   };
 
   const handleFilterChange = (filter: string) => {
@@ -360,67 +392,78 @@ export default function SearchPage() {
             {/* Results List */}
             <div className="w-full px-6 py-6">
               <div className="space-y-3" style={{ maxWidth: "680px", margin: "0 auto" }}>
-                <AnimatePresence>
-                  {results.map((r, i) => (
-                    <motion.div
-                      key={r.id}
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.06 }}
-                      onClick={() => setSelectedResult(r)}
-                      className="cursor-pointer card-interactive"
-                      style={{ padding: "20px" }}
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="flex items-center justify-center flex-shrink-0"
-                            style={{
-                              width: 40, height: 40, borderRadius: "var(--radius-sm)",
-                              background: "var(--cobalt-glow)",
-                            }}
-                          >
-                            <FileText size={18} style={{ color: "var(--cobalt)" }} />
-                          </div>
-                          <div>
-                            <h3 style={{ fontFamily: "var(--font-headline)", fontWeight: 500, fontSize: "0.9375rem", color: "var(--text-primary)" }}>
-                              {r.title}
-                            </h3>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="badge">{r.source}</span>
-                              <span style={{ color: "var(--text-tertiary)", fontSize: "0.6875rem", fontFamily: "var(--font-mono)" }}>{r.date}</span>
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+                    <Loader2 className="animate-spin text-cobalt" size={32} style={{ color: "var(--cobalt)" }} />
+                    <span style={{ fontSize: "0.875rem" }}>Executing neural search...</span>
+                  </div>
+                ) : results.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                    <span style={{ fontSize: "0.875rem" }}>No results found matching your query.</span>
+                  </div>
+                ) : (
+                  <AnimatePresence>
+                    {results.map((r, i) => (
+                      <motion.div
+                        key={r.id}
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.06 }}
+                        onClick={() => setSelectedResult(r)}
+                        className="cursor-pointer card-interactive"
+                        style={{ padding: "20px" }}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="flex items-center justify-center flex-shrink-0"
+                              style={{
+                                width: 40, height: 40, borderRadius: "var(--radius-sm)",
+                                background: "var(--cobalt-glow)",
+                              }}
+                            >
+                              <FileText size={18} style={{ color: "var(--cobalt)" }} />
+                            </div>
+                            <div>
+                              <h3 style={{ fontFamily: "var(--font-headline)", fontWeight: 500, fontSize: "0.9375rem", color: "var(--text-primary)" }}>
+                                {r.title}
+                              </h3>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="badge">{r.source}</span>
+                                <span style={{ color: "var(--text-tertiary)", fontSize: "0.6875rem", fontFamily: "var(--font-mono)" }}>{r.date}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0 ml-3" style={{
-                          padding: "4px 8px", borderRadius: "var(--radius-sm)",
-                          background: r.score > 0.9 ? "rgba(16,185,129,0.12)" : "var(--cobalt-glow)",
-                        }}>
-                          <Star size={11} style={{ color: r.score > 0.9 ? "var(--success)" : "var(--cobalt)" }} />
-                          <span style={{
-                            color: r.score > 0.9 ? "var(--success)" : "var(--cobalt-light)",
-                            fontSize: "0.6875rem", fontFamily: "var(--font-mono)", fontWeight: 500,
+                          <div className="flex items-center gap-1 flex-shrink-0 ml-3" style={{
+                            padding: "4px 8px", borderRadius: "var(--radius-sm)",
+                            background: r.score > 0.9 ? "rgba(16,185,129,0.12)" : "var(--cobalt-glow)",
                           }}>
-                            {(r.score * 100).toFixed(0)}%
-                          </span>
+                            <Star size={11} style={{ color: r.score > 0.9 ? "var(--success)" : "var(--cobalt)" }} />
+                            <span style={{
+                              color: r.score > 0.9 ? "var(--success)" : "var(--cobalt-light)",
+                              fontSize: "0.6875rem", fontFamily: "var(--font-mono)", fontWeight: 500,
+                            }}>
+                              {(r.score * 100).toFixed(0)}%
+                            </span>
+                          </div>
                         </div>
-                      </div>
 
-                      <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", lineHeight: 1.6, marginBottom: "12px" }}>
-                        {r.content}
-                      </p>
+                        <p style={{ color: "var(--text-secondary)", fontSize: "0.8125rem", lineHeight: 1.6, marginBottom: "12px" }}>
+                          {r.content}
+                        </p>
 
-                      {r.highlights.length > 0 && (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Tag size={12} style={{ color: "var(--cobalt)" }} />
-                          {r.highlights.map((h, j) => (
-                            <span key={j} className="badge badge-accent">{h}</span>
-                          ))}
-                        </div>
-                      )}
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
+                        {r.highlights.length > 0 && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Tag size={12} style={{ color: "var(--cobalt)" }} />
+                            {r.highlights.map((h, j) => (
+                              <span key={j} className="badge badge-accent">{h}</span>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                )}
               </div>
             </div>
           </div>

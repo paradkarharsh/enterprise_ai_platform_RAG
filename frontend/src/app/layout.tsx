@@ -9,8 +9,8 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "NeuralArch — Enterprise RAG Platform",
-  description: "High-performance enterprise knowledge synthesis platform combining Retrieval-Augmented Generation, Knowledge Graphs, and Multi-Agent Workflows.",
+  title: "Manthan AI — Enterprise Knowledge Intelligence Platform",
+  description: "High-performance enterprise knowledge intelligence platform combining Retrieval-Augmented Generation, Knowledge Graphs, and Multi-Agent Workflows.",
   keywords: ["AI", "Knowledge Graph", "RAG", "Enterprise Search", "LLM"],
 };
 

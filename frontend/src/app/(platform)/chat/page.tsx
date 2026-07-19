@@ -1,21 +1,24 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Send, RotateCcw, Copy, ThumbsUp, ThumbsDown,
-  Bot, User, Loader2, Paperclip, Cpu, Globe, Code, Zap,
+  Bot, User, Loader2, Paperclip, Cpu, Globe, Code, Zap, FileText,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { useChatStore, useToastStore } from "@/lib/store";
-
-const suggestedPrompts = [
-  { icon: <Cpu size={16} />, text: "Explain the architecture of GPT-4", category: "TECHNICAL" },
-  { icon: <Globe size={16} />, text: "Compare Google and Microsoft cloud strategies", category: "ANALYSIS" },
-  { icon: <Zap size={16} />, text: "What are the latest AI trends in 2025?", category: "RESEARCH" },
-  { icon: <Code size={16} />, text: "How does RAG improve LLM accuracy?", category: "TECHNICAL" },
-];
+import { useChatStore, useToastStore, useAuthStore } from "@/lib/store";
+import ReactFlow, { Background, Controls, MiniMap, Node, Edge, addEdge, Connection } from "reactflow";
+import "reactflow/dist/style.css";
 
 export default function ChatPage() {
+  const defaultPromptData = [
+    { iconName: "Cpu", text: "Who holds the record for most centuries in Test cricket?", category: "CRICKET" },
+    { iconName: "Cpu", text: "Who is the GOAT of cricket?", category: "CRICKET" },
+    { iconName: "Zap", text: "Tell me about MS Dhoni's captaincy achievements.", category: "CRICKET" },
+    { iconName: "Globe", text: "Which country has won the most ICC World Cups?", category: "CRICKET" },
+  ];
+  
+  const [prompts, setPrompts] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -23,6 +26,24 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { messages, addMessage, updateLastMessage, isLoading, setLoading, setMessages } = useChatStore();
   const { addToast } = useToastStore();
+  const { token } = useAuthStore();
+
+  // Render icon component based on name (client-side only to avoid hydration mismatch)
+  const renderIcon = (iconName: string) => {
+    switch (iconName) {
+      case "Globe": return <Globe size={16} />;
+      case "Cpu": return <Cpu size={16} />;
+      case "Zap": return <Zap size={16} />;
+      case "Code": return <Code size={16} />;
+      case "FileText": return <FileText size={16} />;
+      default: return <Zap size={16} />;
+    }
+  };
+
+  // Initialize prompts with icons on client side
+  useEffect(() => {
+    setPrompts(defaultPromptData.map(p => ({ ...p, icon: renderIcon(p.iconName) })));
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -30,7 +51,141 @@ export default function ChatPage() {
 
   useEffect(scrollToBottom, [messages]);
 
+  const fetchSuggestedQuestions = useCallback(async () => {
+    try {
+      const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/v1/chat/suggested-questions`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped = data.map((item: any) => {
+            let iconName = "Zap";
+            if (item.category === "FOOTBALL") {
+              iconName = "Globe";
+            } else if (item.category === "CRICKET") {
+              iconName = "Cpu";
+            } else if (["PDF", "DOCX", "TXT", "CSV", "EXCEL", "MARKDOWN"].includes(item.category)) {
+              iconName = "FileText";
+            }
+            return {
+              ...item,
+              icon: renderIcon(iconName),
+              iconName,
+            };
+          });
+          setPrompts(mapped);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load suggested questions:", err);
+    }
+  }, [token]);
 
+  useEffect(() => {
+    fetchSuggestedQuestions();
+  }, [fetchSuggestedQuestions]);
+
+  const generateMessageId = () => crypto.randomUUID();
+
+  // Knowledge Graph Component
+  const KnowledgeGraph = ({ graphData }: { graphData: any }) => {
+    if (!graphData || !Array.isArray(graphData) || graphData.length === 0) {
+      return null;
+    }
+
+    // Convert graph results to ReactFlow nodes and edges
+    const nodes = [];
+    const edges = [];
+    const nodeMap = new Map();
+    let nodeId = 0;
+
+    graphData.forEach((record: any) => {
+      // Handle different possible graph result formats
+      if (record.n && record.m) {
+        // Neo4j path result with nodes n and m
+        [record.n, record.m].forEach((node: any) => {
+          if (node && node.name && !nodeMap.has(node.name)) {
+            nodeMap.set(node.name, `node-${nodeId++}`);
+            nodes.push({
+              id: nodeMap.get(node.name),
+              data: { label: node.name, type: node.type || node.labels?.[0] || "Entity" },
+              position: { x: Math.random() * 400, y: Math.random() * 300 },
+              style: { background: "var(--cobalt)", color: "white", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" },
+            });
+          }
+        });
+        if (record.n && record.m && record.n.name && record.m.name) {
+          edges.push({
+            id: `edge-${edges.length}`,
+            source: nodeMap.get(record.n.name),
+            target: nodeMap.get(record.m.name),
+            label: record.r?.type || record.relationship || "RELATED",
+            style: { stroke: "var(--cobalt)", strokeWidth: 2 },
+            labelStyle: { fontSize: "10px", fill: "var(--text-secondary)" },
+            animated: true,
+          });
+        }
+      } else if (record.nodes && record.edges) {
+        // GraphResult format with nodes and edges arrays
+        record.nodes.forEach((node: any, i: number) => {
+          if (!nodeMap.has(node.id)) {
+            nodeMap.set(node.id, `node-${nodeId++}`);
+            nodes.push({
+              id: nodeMap.get(node.id),
+              data: { label: node.name || node.id, type: node.label || node.type },
+              position: { x: Math.random() * 400, y: Math.random() * 300 },
+              style: { background: "var(--cobalt)", color: "white", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" },
+            });
+          }
+        });
+        record.edges.forEach((edge: any) => {
+          if (nodeMap.has(edge.source) && nodeMap.has(edge.target)) {
+            edges.push({
+              id: `edge-${edges.length}`,
+              source: nodeMap.get(edge.source),
+              target: nodeMap.get(edge.target),
+              label: edge.type || edge.relationship || "RELATED",
+              style: { stroke: "var(--cobalt)", strokeWidth: 2 },
+              labelStyle: { fontSize: "10px", fill: "var(--text-secondary)" },
+              animated: true,
+            });
+          }
+        });
+      } else if (record.id && record.name) {
+        // Simple entity format
+        if (!nodeMap.has(record.id)) {
+          nodeMap.set(record.id, `node-${nodeId++}`);
+          nodes.push({
+            id: nodeMap.get(record.id),
+            data: { label: record.name, type: record.type || record.labels?.[0] || "Entity" },
+            position: { x: Math.random() * 400, y: Math.random() * 300 },
+            style: { background: "var(--cobalt)", color: "white", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" },
+          });
+        }
+      }
+    });
+
+    if (nodes.length === 0) return null;
+
+    return (
+      <div style={{ width: "100%", height: 300, marginTop: "16px", borderRadius: "12px", border: "1px solid var(--border-default)", background: "var(--bg-glass)", overflow: "hidden" }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          fitView
+          attributionPosition="bottom-right"
+        >
+          <Background color="var(--text-tertiary)" gap={20} />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
+      </div>
+    );
+  };
 
   const handleSend = async (customMsg?: string) => {
     const textToSend = typeof customMsg === "string" ? customMsg : input;
@@ -39,7 +194,7 @@ export default function ChatPage() {
     if (customMsg === undefined) setInput("");
 
     addMessage({
-      id: Date.now().toString(),
+      id: generateMessageId(),
       role: "user",
       content: userMessage,
       timestamp: new Date().toISOString(),
@@ -49,7 +204,7 @@ export default function ChatPage() {
     setIsStreaming(true);
 
     addMessage({
-      id: (Date.now() + 1).toString(),
+      id: generateMessageId(),
       role: "assistant",
       content: "",
       timestamp: new Date().toISOString(),
@@ -61,9 +216,14 @@ export default function ChatPage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const res = await fetch(`${API_BASE}/api/v1/chat/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ message: userMessage, stream: true }),
         signal: controller.signal,
       });
@@ -77,20 +237,45 @@ export default function ChatPage() {
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
+      const traces: string[] = [];
+
+      let streamBuffer = "";
 
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
+          streamBuffer += decoder.decode(value, { stream: true });
+          const lines = streamBuffer.split("\n");
+          streamBuffer = lines.pop() || "";
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               try {
                 const data = JSON.parse(line.slice(6));
                 if (data.type === "content") {
                   accumulated += data.content;
-                  updateLastMessage(accumulated);
+                  const traceBlock = traces.length > 0
+                    ? `> ⚙️ **Agent Pipeline Trace:**\n${traces.map(t => `> * ${t}`).join("\n")}\n\n`
+                    : "";
+                  updateLastMessage(traceBlock + accumulated);
+                } else if (data.type === "trace") {
+                  traces.push(data.content);
+                  const traceBlock = `> ⚙️ **Agent Pipeline Trace:**\n${traces.map(t => `> * ${t}`).join("\n")}\n\n`;
+                  updateLastMessage(traceBlock + accumulated);
+                } else if (data.type === "graph") {
+                  // Attach graph data to the last assistant message
+                  const lastMsg = messages[messages.length - 1];
+                  if (lastMsg && lastMsg.role === "assistant") {
+                    // We need to update the message with graphData
+                    // Since we're using Zustand, we can't directly mutate, so we'll use a different approach
+                    // Store the graphData in a ref or state, then apply when the message is complete
+                    const currentMessages = [...messages];
+                    currentMessages[currentMessages.length - 1] = {
+                      ...currentMessages[currentMessages.length - 1],
+                      graphData: data.content,
+                    };
+                    setMessages(currentMessages);
+                  }
                 } else if (data.type === "error") {
                   throw new Error(data.error);
                 }
@@ -149,7 +334,7 @@ export default function ChatPage() {
     addToast(`Uploading ${file.name}...`, "info");
 
     addMessage({
-      id: Date.now().toString(),
+      id: generateMessageId(),
       role: "user",
       content: `Uploading document: **${file.name}**`,
       timestamp: new Date().toISOString(),
@@ -173,7 +358,7 @@ export default function ChatPage() {
       const data = await res.json();
       addToast(`${file.name} ingested successfully!`, "success");
       addMessage({
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId(),
         role: "assistant",
         content: `I have parsed and indexed **${file.name}**.\n\n**Ingestion Results:**\n| Metric | Value |\n|---|---|\n| **Status** | ✅ ${data.status || "indexed"} |\n| **Pages** | ${data.page_count ?? "N/A"} |\n| **Chunks** | ${data.chunk_count ?? 0} |\n| **Entities** | ${data.entity_count ?? 0} |\n| **File Size** | ${data.file_size ? (data.file_size / 1024).toFixed(1) + " KB" : "N/A"} |\n\nYou can now query this document's contents.`,
         timestamp: new Date().toISOString(),
@@ -182,7 +367,7 @@ export default function ChatPage() {
       const error = err as Error;
       addToast(`Upload failed: ${error.message}`, "error");
       addMessage({
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId(),
         role: "assistant",
         content: `❌ Failed to upload **${file.name}**: ${error.message}\n\n> Make sure the backend is running at \`http://localhost:8000\``,
         timestamp: new Date().toISOString(),
@@ -219,7 +404,7 @@ export default function ChatPage() {
                   boxShadow: "0 12px 32px rgba(0,0,0,0.15)",
                 }}
               >
-                <img src="/logo.png" alt="NeuralArch Logo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(1.8)" }} />
+                <img src="/logo.png" alt="Manthan AI Logo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(1.8)" }} />
               </div>
 
               <h1
@@ -238,7 +423,7 @@ export default function ChatPage() {
 
               {/* Prompt Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {suggestedPrompts.map((prompt, i) => (
+                {prompts.map((prompt, i) => (
                   <motion.button
                     key={i}
                     initial={{ opacity: 0, y: 15 }}
@@ -302,7 +487,7 @@ export default function ChatPage() {
                   >
                     {msg.role === "assistant" ? (
                       <div className="prose" style={{ fontSize: "0.875rem" }}>
-                        <ReactMarkdown>{msg.content || (msg.isStreaming ? "●" : "")}</ReactMarkdown>
+                        <ReactMarkdown>{(msg.content || "").replace(/\\n/g, '\n') || (msg.isStreaming ? "●" : "")}</ReactMarkdown>
                         {msg.isStreaming && isStreaming && (
                           <span
                             className="inline-block animate-pulse"
@@ -315,6 +500,10 @@ export default function ChatPage() {
                       </div>
                     ) : (
                       <p style={{ fontSize: "0.875rem", lineHeight: 1.5 }}>{msg.content}</p>
+                    )}
+                    {/* Knowledge Graph visualization */}
+                    {msg.role === "assistant" && msg.graphData && (
+                      <KnowledgeGraph graphData={msg.graphData} />
                     )}
                   </div>
                   {msg.role === "user" && (
@@ -434,7 +623,7 @@ export default function ChatPage() {
             </motion.button>
           </div>
           <p className="text-center mt-3" style={{ color: "var(--text-tertiary)", fontSize: "0.6875rem", fontFamily: "var(--font-mono)" }}>
-            NeuralArch can make mistakes · Verify important information
+            Manthan AI can make mistakes · Verify important information
           </p>
         </div>
       </div>

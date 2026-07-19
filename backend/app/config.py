@@ -28,10 +28,22 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
+        import os
+        env_url = os.environ.get("DATABASE_URL")
+        if env_url:
+            if env_url.startswith("postgresql://"):
+                env_url = env_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return env_url
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     @property
     def DATABASE_URL_SYNC(self) -> str:
+        import os
+        env_url = os.environ.get("DATABASE_URL")
+        if env_url:
+            if env_url.startswith("postgresql+asyncpg://"):
+                env_url = env_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+            return env_url
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     # Redis
@@ -54,6 +66,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     DEFAULT_LLM_PROVIDER: str = "gemini"
     DEFAULT_LLM_MODEL: str = "gemini-2.0-flash"
@@ -88,6 +101,13 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: Optional[str] = None
     OAUTH_REDIRECT_URI: str = "http://localhost:3000/auth/callback"
 
+    # Webhook Integrations
+    SLACK_BOT_TOKEN: Optional[str] = None
+    SLACK_SIGNING_SECRET: Optional[str] = None
+    DISCORD_WEBHOOK_URL: Optional[str] = None
+    WHATSAPP_API_TOKEN: Optional[str] = None
+    WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
+
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 1000
@@ -95,10 +115,33 @@ class Settings(BaseSettings):
     # File Upload
     MAX_UPLOAD_SIZE_MB: int = 100
     UPLOAD_DIR: str = "./uploads"
+    
+    @property
+    def UPLOADS_ABSOLUTE_DIR(self) -> str:
+        """Resolve UPLOAD_DIR to an absolute path."""
+        from pathlib import Path
+        upload_path = Path(self.UPLOAD_DIR)
+        if upload_path.is_absolute():
+            return str(upload_path)
+        # Resolve relative to the backend directory (where config.py is)
+        backend_dir = Path(__file__).parent.parent.parent
+        return str(backend_dir / self.UPLOAD_DIR)
+
     ALLOWED_EXTENSIONS: List[str] = [
         ".pdf", ".docx", ".pptx", ".txt", ".csv",
-        ".xlsx", ".xls", ".eml", ".msg", ".html"
+        ".xlsx", ".xls", ".eml", ".msg", ".html",
+        ".md", ".markdown"
     ]
+
+    @property
+    def UPLOADS_ABSOLUTE_DIR(self) -> str:
+        """Resolve UPLOAD_DIR to an absolute path based on the backend directory."""
+        from pathlib import Path
+        base_dir = Path(__file__).resolve().parent.parent.parent  # backend/app/config.py -> backend/
+        upload_path = Path(self.UPLOAD_DIR)
+        if not upload_path.is_absolute():
+            upload_path = base_dir / upload_path
+        return str(upload_path.resolve())
 
     # Chunking
     CHUNK_SIZE: int = 1000
@@ -112,6 +155,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "ignore"
 
 
 @lru_cache()

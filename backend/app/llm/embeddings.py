@@ -123,13 +123,26 @@ class MockEmbeddings(BaseEmbeddingProvider):
         return self._dimension
 
     def _embed_text_sync(self, text: str) -> List[float]:
-        # Deterministic generation using hash
+        # Simple deterministic hashing trick (Bag of Words) so similar texts share vectors
+        import re
         import hashlib
         import numpy as np
-        h = hashlib.sha256(text.encode("utf-8")).digest()
-        seed = int.from_bytes(h[:4], byteorder="big")
-        rng = np.random.default_rng(seed)
-        vec = rng.normal(size=self._dimension)
+        
+        vec = np.zeros(self._dimension, dtype=np.float32)
+        # Tokenize by word boundaries
+        words = re.findall(r'\w+', text.lower())
+        if not words:
+            # Fallback to random if empty
+            vec[0] = 1.0
+        else:
+            for word in words:
+                # Hash word to an index
+                idx = int(hashlib.md5(word.encode("utf-8")).hexdigest()[:8], 16) % self._dimension
+                vec[idx] += 1.0
+                
+        # Add a tiny base vector to ensure all texts have some non-zero similarity
+        vec += 0.05
+        
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
@@ -142,12 +155,54 @@ class MockEmbeddings(BaseEmbeddingProvider):
         return self._embed_text_sync(query)
 
 
+class GeminiEmbeddings(BaseEmbeddingProvider):
+    """Google Gemini embedding models."""
+
+    def __init__(self, model: str = "models/gemini-embedding-2"):
+        self.model = model
+        self.api_key = settings.GEMINI_API_KEY
+        self._dimension = settings.EMBEDDING_DIMENSION  # Respect configured dimension (default 1024)
+
+    def dimension(self) -> int:
+        return self._dimension
+
+    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        import asyncio
+        from google import genai
+        
+        if not self.api_key:
+            raise RuntimeError("Gemini API key is not configured.")
+
+        client = genai.Client(api_key=self.api_key)
+
+        def _embed():
+            embeddings = []
+            batch_size = 50
+            for j in range(0, len(texts), batch_size):
+                batch = texts[j:j + batch_size]
+                response = client.models.embed_content(
+                    model=self.model,
+                    contents=batch,
+                    config={"output_dimensionality": self._dimension}
+                )
+                for emb in response.embeddings:
+                    embeddings.append(emb.values)
+            return embeddings
+
+        return await asyncio.to_thread(_embed)
+
+    async def embed_query(self, query: str) -> List[float]:
+        result = await self.embed_texts([query])
+        return result[0]
+
+
 # ─────────────────────────────────────────────
 # Factory
 # ─────────────────────────────────────────────
 
 EMBEDDING_PROVIDERS = {
     "openai": lambda: OpenAIEmbeddings(),
+    "gemini": lambda: GeminiEmbeddings(),
     "bge-large": lambda: HuggingFaceEmbeddings("BAAI/bge-large-en-v1.5"),
     "e5-large": lambda: HuggingFaceEmbeddings("intfloat/e5-large-v2"),
     "mock": lambda: MockEmbeddings(settings.EMBEDDING_DIMENSION),

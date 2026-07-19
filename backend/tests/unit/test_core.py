@@ -16,7 +16,7 @@ class TestConfig:
 
     def test_default_settings(self):
         settings = Settings()
-        assert settings.APP_NAME == "Enterprise AI Knowledge Platform"
+        assert "Manthan AI" in settings.APP_NAME
         assert settings.APP_VERSION == "1.0.0"
         assert settings.API_PREFIX == "/api/v1"
 
@@ -128,9 +128,10 @@ class TestLLMFactory:
 
     def test_list_providers(self):
         providers = list_available_providers()
-        assert len(providers) == 5
+        assert len(providers) == 6
         names = [p["name"] for p in providers]
         assert "gemini" in names
+        assert "groq" in names
         assert "openai" in names
         assert "claude" in names
         assert "ollama" in names
@@ -138,6 +139,7 @@ class TestLLMFactory:
 
     def test_provider_not_found_raises(self):
         with patch("app.llm.factory.GeminiProvider.is_available", return_value=False), \
+             patch("app.llm.factory.GroqProvider.is_available", return_value=False), \
              patch("app.llm.factory.OpenAIProvider.is_available", return_value=False), \
              patch("app.llm.factory.ClaudeProvider.is_available", return_value=False), \
              patch("app.llm.factory.OllamaProvider.is_available", return_value=False), \

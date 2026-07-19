@@ -1,8 +1,8 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: nexusai-ingress
-  namespace: nexusai
+  name: manthanai-ingress
+  namespace: manthanai
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
@@ -10,23 +10,23 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - nexusai.example.com
-      secretName: nexusai-tls
+        - manthanai.example.com
+      secretName: manthanai-tls
   rules:
-    - host: nexusai.example.com
+    - host: manthanai.example.com
       http:
         paths:
           - path: /api
             pathType: Prefix
             backend:
               service:
-                name: nexusai-backend-service
+                name: manthanai-backend-service
                 port:
                   number: 8000
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: nexusai-frontend-service
+                name: manthanai-frontend-service
                 port:
                   number: 3000

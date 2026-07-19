@@ -1,15 +1,23 @@
 "use client";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { useSidebarStore, useSettingsStore } from "@/lib/store";
+import { useSidebarStore, useSettingsStore, useAuthStore } from "@/lib/store";
 import { ToastContainer } from "@/components/ui/ToastContainer";
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   const isOpen = useSidebarStore((s) => s.isOpen);
   const theme = useSettingsStore((s) => s.settings.theme);
+  const { isAuthenticated } = useAuthStore();
+  const router = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/login");
+    }
+  }, [isAuthenticated, router]);
 
   useEffect(() => {
     const htmlEl = document.documentElement;

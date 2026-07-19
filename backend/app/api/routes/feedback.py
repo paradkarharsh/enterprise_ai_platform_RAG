@@ -16,7 +16,7 @@ class FeedbackCreate(BaseModel):
     rating: Optional[int] = None
     comment: Optional[str] = None
 
-@router.post("/")
+@router.post("")
 async def submit_feedback(
     feedback_in: FeedbackCreate,
     db: AsyncSession = Depends(get_db),

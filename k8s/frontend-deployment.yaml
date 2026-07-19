@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nexusai-frontend
-  namespace: nexusai
+  name: manthanai-frontend
+  namespace: manthanai
   labels:
-    app: nexusai-frontend
+    app: manthanai-frontend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: nexusai-frontend
+      app: manthanai-frontend
   template:
     metadata:
       labels:
-        app: nexusai-frontend
+        app: manthanai-frontend
     spec:
       containers:
         - name: frontend
-          image: nexusai/frontend:latest
+          image: manthanai/frontend:latest
           ports:
             - containerPort: 3000
           env:
             - name: NEXT_PUBLIC_API_URL
-              value: "http://nexusai-backend-service:8000"
+              value: "http://manthanai-backend-service:8000"
           resources:
             requests:
               memory: "256Mi"
@@ -34,11 +34,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: nexusai-frontend-service
-  namespace: nexusai
+  name: manthanai-frontend-service
+  namespace: manthanai
 spec:
   selector:
-    app: nexusai-frontend
+    app: manthanai-frontend
   ports:
     - port: 3000
       targetPort: 3000

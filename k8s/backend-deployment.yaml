@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nexusai-backend
-  namespace: nexusai
+  name: manthanai-backend
+  namespace: manthanai
   labels:
-    app: nexusai-backend
+    app: manthanai-backend
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: nexusai-backend
+      app: manthanai-backend
   template:
     metadata:
       labels:
-        app: nexusai-backend
+        app: manthanai-backend
     spec:
       containers:
         - name: backend
-          image: nexusai/backend:latest
+          image: manthanai/backend:latest
           ports:
             - containerPort: 8000
           envFrom:
             - secretRef:
-                name: nexusai-secrets
+                name: manthanai-secrets
           resources:
             requests:
               memory: "512Mi"
@@ -46,11 +46,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: nexusai-backend-service
-  namespace: nexusai
+  name: manthanai-backend-service
+  namespace: manthanai
 spec:
   selector:
-    app: nexusai-backend
+    app: manthanai-backend
   ports:
     - port: 8000
       targetPort: 8000

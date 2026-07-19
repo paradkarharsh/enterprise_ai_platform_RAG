@@ -1,11 +1,11 @@
-# 🧠 NexusAI — Enterprise AI Knowledge Platform
+# 🧠 Manthan AI — Enterprise Knowledge Intelligence Platform
 
-[![CI/CD](https://github.com/nexusai/platform/actions/workflows/ci.yml/badge.svg)](https://github.com/nexusai/platform/actions)
+[![CI/CD](https://github.com/manthanai/platform/actions/workflows/ci.yml/badge.svg)](https://github.com/manthanai/platform/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-black.svg)](https://nextjs.org/)
 
-> Production-grade Enterprise AI Knowledge Platform combining **Knowledge Graph Intelligence**, **Agentic RAG**, **Enterprise Search**, **Multi-Agent Workflows**, and **Analytics** — with a premium SaaS experience.
+> Production-grade Enterprise Knowledge Intelligence Platform combining **Knowledge Graph Intelligence**, **Agentic RAG**, **Enterprise Search**, **Multi-Agent Workflows**, and **Analytics** — with a premium SaaS experience.
 
 ---
 

@@ -6,7 +6,7 @@ import {
   Search, GitBranch, Activity, BarChart3,
   Settings, ChevronLeft, ChevronRight,
   Plus, HelpCircle, LogOut, MessageSquare,
-  Database, Cpu, Ticket
+  Database, Ticket
 } from "lucide-react";
 import { useSidebarStore, useAuthStore, useToastStore, useChatStore } from "@/lib/store";
 
@@ -70,7 +70,7 @@ export function Sidebar() {
             boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
           }}
         >
-          <img src="/logo.png" alt="NeuralArch Logo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(1.8)" }} />
+          <img src="/logo.png" alt="Manthan AI Logo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(1.8)" }} />
         </motion.div>
         
         <AnimatePresence mode="popLayout">
@@ -86,7 +86,7 @@ export function Sidebar() {
                 className="font-semibold text-base"
                 style={{ fontFamily: "var(--font-headline)", color: "var(--text-primary)", letterSpacing: "-0.02em" }}
               >
-                NeuralArch
+                                Manthan AI
               </span>
             </motion.div>
           )}
@@ -275,7 +275,7 @@ export function Sidebar() {
                 {user?.full_name || "Guest User"}
               </p>
               <p style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 500, lineHeight: 1.2 }} className="truncate">
-                {user?.email || "guest@neuralarch.ai"}
+                {user?.email || "guest@manthan.ai"}
               </p>
             </div>
           )}

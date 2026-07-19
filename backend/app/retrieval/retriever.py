@@ -81,6 +81,53 @@ class HybridRetriever:
                 seen[r.id] = r
 
         unique_results = sorted(seen.values(), key=lambda x: x.score, reverse=True)
+
+        # Fallback to SQLite DB keyword search if no results found in vector store
+        if not unique_results:
+            logger.info("Vector store returned no results. Performing SQLite DB keyword search fallback.")
+            try:
+                from app.db.postgres import async_session
+                from app.db.models import Chunk
+                from sqlalchemy import select, or_
+
+                # Split query into terms
+                terms = [t.strip() for t in query.lower().split() if len(t.strip()) > 2]
+                if not terms:
+                    terms = [query.lower().strip()]
+
+                async with async_session() as session:
+                    # Construct query to search chunk content
+                    stmt = select(Chunk)
+                    if terms:
+                        conditions = [Chunk.content.like(f"%{term}%") for term in terms if term]
+                        if conditions:
+                            stmt = stmt.where(or_(*conditions))
+
+                    # Handle document_id filter if present in filters
+                    if filters and "document_id" in filters:
+                        doc_id = filters["document_id"]
+                        stmt = stmt.where(Chunk.document_id == doc_id)
+
+                    stmt = stmt.limit(top_k)
+                    res = await session.execute(stmt)
+                    db_chunks = res.scalars().all()
+
+                    for chunk in db_chunks:
+                        # Score calculation based on token overlap
+                        content_lower = chunk.content.lower()
+                        overlap = sum(1 for term in terms if term in content_lower)
+                        score = overlap / max(len(terms), 1)
+                        unique_results.append(SearchResult(
+                            id=str(chunk.id),
+                            content=chunk.content,
+                            score=0.5 + 0.5 * score,  # Map to 0.5 - 1.0
+                            metadata=chunk.meta or {},
+                        ))
+
+                    unique_results.sort(key=lambda x: x.score, reverse=True)
+            except Exception as fallback_err:
+                logger.error("SQLite DB keyword search fallback failed: %s", fallback_err)
+
         return unique_results[:top_k]
 
     async def keyword_search(

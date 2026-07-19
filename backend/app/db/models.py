@@ -46,6 +46,7 @@ class SourceType(str, enum.Enum):
     WEBSITE = "website"
     API = "api"
     SQL_DB = "sql_database"
+    MARKDOWN = "markdown"
 
 
 # ─────────────────────────────────────────────
@@ -139,6 +140,8 @@ class Document(Base):
     entity_count: Mapped[int] = mapped_column(Integer, default=0)
     meta: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default=dict)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    processing_stage: Mapped[Optional[str]] = mapped_column(String(100), default="pending")
     indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -341,4 +344,26 @@ class Feedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     message = relationship("Message", back_populates="feedbacks")
+
+
+class EntityNode(Base):
+    __tablename__ = "kg_entities"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    properties: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EntityRelationship(Base):
+    __tablename__ = "kg_relationships"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(255), ForeignKey("kg_entities.id", ondelete="CASCADE"), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    target: Mapped[str] = mapped_column(String(255), ForeignKey("kg_entities.id", ondelete="CASCADE"), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    relationship: Mapped[str] = mapped_column(String(100), nullable=False)
+    properties: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

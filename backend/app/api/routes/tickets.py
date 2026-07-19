@@ -28,7 +28,33 @@ class TicketUpdate(BaseModel):
     priority: Optional[str] = None
     assigned_agent_id: Optional[uuid.UUID] = None
 
-@router.get("/", response_model=List[TicketResponse])
+
+class TicketCreate(BaseModel):
+    department: str
+    summary: str
+    priority: Optional[str] = "medium"
+
+
+@router.post("", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
+async def create_ticket(
+    ticket_data: TicketCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new support ticket."""
+    new_ticket = SupportTicket(
+        user_id=current_user.id,
+        department=ticket_data.department,
+        summary=ticket_data.summary,
+        priority=ticket_data.priority or "medium",
+        status="open"
+    )
+    db.add(new_ticket)
+    await db.commit()
+    await db.refresh(new_ticket)
+    return new_ticket
+
+@router.get("", response_model=List[TicketResponse])
 async def get_tickets(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -60,19 +86,24 @@ async def update_ticket(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can update tickets")
-        
     ticket = await db.get(SupportTicket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
         
+    # Owner can only update status. Admins can update everything.
+    if current_user.role != "admin":
+        if ticket.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to update this ticket")
+        if update_data.priority is not None or update_data.assigned_agent_id is not None:
+            raise HTTPException(status_code=403, detail="Only admins can update ticket priority or assignments")
+        
     if update_data.status:
         ticket.status = update_data.status
-    if update_data.priority:
-        ticket.priority = update_data.priority
-    if update_data.assigned_agent_id:
-        ticket.assigned_agent_id = update_data.assigned_agent_id
+    if current_user.role == "admin":
+        if update_data.priority:
+            ticket.priority = update_data.priority
+        if update_data.assigned_agent_id:
+            ticket.assigned_agent_id = update_data.assigned_agent_id
         
     await db.commit()
     await db.refresh(ticket)

@@ -1,6 +1,7 @@
 "use client";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useAuthStore } from "@/lib/store";
 import {
   Cpu, Sparkles, ArrowRight, Shield, BarChart3,
   GitBranch, Search, MessageSquare, FileText, Activity, Check,
@@ -31,6 +32,9 @@ const pricingPlans = [
 ];
 
 export default function LandingPage() {
+  const { isAuthenticated } = useAuthStore();
+  const authTarget = isAuthenticated ? "/chat" : "/login";
+
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
       {/* ── Navbar ── */}
@@ -50,13 +54,13 @@ export default function LandingPage() {
               className="w-9 h-9 rounded-xl flex items-center justify-center"
               style={{ overflow: "hidden", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}
             >
-              <img src="/logo.png" alt="NeuralArch Logo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(1.8)" }} />
+              <img src="/logo.png" alt="Manthan AI Logo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(1.8)" }} />
             </div>
             <span
               className="text-lg font-semibold"
               style={{ fontFamily: "var(--font-headline)", letterSpacing: "-0.02em" }}
             >
-              NeuralArch
+              Manthan AI
             </span>
           </div>
           <div className="hidden md:flex items-center gap-10">
@@ -78,10 +82,10 @@ export default function LandingPage() {
             ))}
           </div>
           <div className="flex items-center gap-4">
-            <Link href="/chat" className="btn-ghost" style={{ fontSize: "0.875rem" }}>
+            <Link href={authTarget} className="btn-ghost" style={{ fontSize: "0.875rem" }}>
               Sign In
             </Link>
-            <Link href="/chat" style={{ textDecoration: "none" }}>
+            <Link href={authTarget} style={{ textDecoration: "none" }}>
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -145,7 +149,7 @@ export default function LandingPage() {
               Combine Knowledge Graph Intelligence, Agentic RAG, and Neural Search into a unified enterprise workspace.
             </p>
             <div className="flex items-center gap-4 justify-center">
-              <Link href="/chat" style={{ textDecoration: "none" }}>
+              <Link href={authTarget} style={{ textDecoration: "none" }}>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -312,17 +316,17 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
             <div style={{ width: 18, height: 18, borderRadius: 4, overflow: "hidden" }}>
-              <img src="/logo.png" alt="NeuralArch Logo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(1.8)" }} />
+              <img src="/logo.png" alt="Manthan AI Logo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(1.8)" }} />
             </div>
             <span
               className="font-semibold text-sm"
               style={{ fontFamily: "var(--font-headline)" }}
             >
-              NeuralArch
+              Manthan AI
             </span>
           </div>
           <p style={{ color: "var(--text-tertiary)", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
-            © 2026 NeuralArch. All rights reserved.
+            © 2026 Manthan AI. All rights reserved.
           </p>
         </div>
       </footer>

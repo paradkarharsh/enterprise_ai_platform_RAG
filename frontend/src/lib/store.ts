@@ -74,6 +74,7 @@ interface Message {
   confidence_score?: number;
   timestamp: string;
   isStreaming?: boolean;
+  graphData?: any;
 }
 
 interface Conversation {
@@ -191,7 +192,7 @@ interface SettingsState {
 
 const DEFAULT_SETTINGS: Settings = {
   apiKey: "sk-••••••••••••3f7a",
-  baseUrl: "https://api.neuralarch.ai/v1",
+  baseUrl: "https://api.manthan.ai/v1",
   model: "gemini-2.0-flash",
   chunkSize: 512,
   overlap: 64,
