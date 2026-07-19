@@ -1,9 +1,8 @@
 /**
  * API Client for Enterprise AI Knowledge Platform backend.
  */
-// Use relative URLs in production (proxied via Next.js rewrites in next.config.ts)
-// Only use absolute URL for local development when explicitly set
-const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+// Connect directly to backend API URL (supports local localhost default or production Railway URL)
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const API_PREFIX = "/api/v1";
 
 type RequestOptions = {

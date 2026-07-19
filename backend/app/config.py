@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     SECRET_KEY: str = "change-this-in-production-use-openssl-rand-hex-32"
     API_PREFIX: str = "/api/v1"
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000", "http://localhost:3001"]
+    CORS_ORIGINS: List[str] = ["*"]
 
     # Database - PostgreSQL
     POSTGRES_HOST: str = "localhost"
