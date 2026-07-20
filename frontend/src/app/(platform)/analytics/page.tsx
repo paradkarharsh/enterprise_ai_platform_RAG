@@ -26,10 +26,10 @@ export default function AnalyticsPage() {
         const [dashData, metricsData, docs] = await Promise.all([
           api.analytics.dashboard(token),
           api.analytics.queryMetrics(token),
-          api.upload.list(token)
+          api.upload.list(token) as Promise<any[]>
         ]);
         
-        setDashboard({ ...dashData, ...metricsData });
+        setDashboard({ ...(dashData as any), ...(metricsData as any) });
         setDocuments(docs.slice(0, 5)); // Just take top 5 recent docs
       } catch (e: any) {
         console.error("Failed to load analytics data", e);
