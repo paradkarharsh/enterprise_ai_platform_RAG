@@ -55,7 +55,7 @@ export default function ChatPage() {
 
   const fetchSuggestedQuestions = useCallback(async () => {
     try {
-      const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -216,7 +216,7 @@ export default function ChatPage() {
     // ── Knowledge Base Search Mode ──
     if (searchMode === "kb") {
       try {
-        const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (token) {
           headers["Authorization"] = `Bearer ${token}`;
@@ -266,7 +266,7 @@ export default function ChatPage() {
 
     // ── AI Chat Mode (direct LLM streaming — Gemini/Groq with fallback) ──
     try {
-      const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
@@ -392,7 +392,7 @@ export default function ChatPage() {
     });
 
     try {
-      const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const formData = new FormData();
       formData.append("file", file);
 
