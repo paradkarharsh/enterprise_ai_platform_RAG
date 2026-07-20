@@ -63,8 +63,8 @@ export default function TicketsPage() {
         status: (t.status || "open") as SupportTicket["status"],
         priority: (t.priority || "medium") as SupportTicket["priority"],
         category: ((t.department || "technical").toLowerCase()) as SupportTicket["category"],
-        created_at: formatDistance(t.created_at),
-        updated_at: formatDistance(t.updated_at),
+        created_at: formatDistance(t.created_at || new Date().toISOString()),
+        updated_at: formatDistance(t.updated_at || new Date().toISOString()),
         isAutoEscalated: t.is_auto_escalated || false,
       }));
       setTickets(mapped);

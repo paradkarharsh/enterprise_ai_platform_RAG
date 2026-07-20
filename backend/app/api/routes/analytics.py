@@ -17,18 +17,22 @@ async def get_dashboard(db: AsyncSession = Depends(get_db), current_user: User =
     """Get analytics dashboard data."""
     try:
         # Document and Chunk counts
-        docs_res = await db.execute(select(func.count(Document.id)))
+        docs_res = await db.execute(select(func.count(Document.id)).where(Document.owner_id == current_user.id))
         total_docs = docs_res.scalar() or 0
 
-        chunks_res = await db.execute(select(func.count(Chunk.id)))
+        chunks_res = await db.execute(
+            select(func.count(Chunk.id))
+            .join(Document, Chunk.document_id == Document.id)
+            .where(Document.owner_id == current_user.id)
+        )
         total_chunks = chunks_res.scalar() or 0
 
         # Query counts
-        queries_res = await db.execute(select(func.count(QueryLog.id)))
+        queries_res = await db.execute(select(func.count(QueryLog.id)).where(QueryLog.user_id == current_user.id))
         total_queries = queries_res.scalar() or 0
 
         # Storage used in MB
-        storage_res = await db.execute(select(func.sum(Document.file_size)))
+        storage_res = await db.execute(select(func.sum(Document.file_size)).where(Document.owner_id == current_user.id))
         storage_bytes = storage_res.scalar() or 0
         storage_mb = round(storage_bytes / (1024 * 1024), 2)
 
@@ -37,12 +41,16 @@ async def get_dashboard(db: AsyncSession = Depends(get_db), current_user: User =
         active_users = users_res.scalar() or 1
 
         # Average Latency
-        latency_res = await db.execute(select(func.avg(QueryLog.latency_ms)))
+        latency_res = await db.execute(select(func.avg(QueryLog.latency_ms)).where(QueryLog.user_id == current_user.id))
         avg_latency = round(latency_res.scalar() or 0.0, 2)
 
         # Queries Today
         today_start = datetime.now(timezone.utc) - timedelta(days=1)
-        today_queries_res = await db.execute(select(func.count(QueryLog.id)).where(QueryLog.created_at >= today_start))
+        today_queries_res = await db.execute(
+            select(func.count(QueryLog.id))
+            .where(QueryLog.created_at >= today_start)
+            .where(QueryLog.user_id == current_user.id)
+        )
         queries_today = today_queries_res.scalar() or 0
 
         # Neo4j Entity & Relationship counts
@@ -88,32 +96,39 @@ async def get_query_metrics(db: AsyncSession = Depends(get_db), current_user: Us
     """Get query performance metrics."""
     try:
         # Total queries
-        q_res = await db.execute(select(func.count(QueryLog.id)))
+        q_res = await db.execute(select(func.count(QueryLog.id)).where(QueryLog.user_id == current_user.id))
         total_queries = q_res.scalar() or 0
 
         # Average latency
-        l_res = await db.execute(select(func.avg(QueryLog.latency_ms)))
+        l_res = await db.execute(select(func.avg(QueryLog.latency_ms)).where(QueryLog.user_id == current_user.id))
         avg_latency = round(l_res.scalar() or 0.0, 2)
 
         # Average confidence
-        c_res = await db.execute(select(func.avg(QueryLog.confidence_score)))
+        c_res = await db.execute(select(func.avg(QueryLog.confidence_score)).where(QueryLog.user_id == current_user.id))
         avg_confidence = round(c_res.scalar() or 0.0, 2)
 
         # Hallucination rate
-        h_res = await db.execute(select(func.avg(QueryLog.hallucination_score)))
+        h_res = await db.execute(select(func.avg(QueryLog.hallucination_score)).where(QueryLog.user_id == current_user.id))
         hallucination_rate = round(h_res.scalar() or 0.0, 2)
 
         # Total tokens
-        tokens_res = await db.execute(select(func.sum(QueryLog.token_input + QueryLog.token_output)))
+        tokens_res = await db.execute(
+            select(func.sum(QueryLog.token_input + QueryLog.token_output))
+            .where(QueryLog.user_id == current_user.id)
+        )
         total_tokens = tokens_res.scalar() or 0
 
         # Total MTD Cost USD
-        cost_res = await db.execute(select(func.sum(QueryLog.cost_usd)))
+        cost_res = await db.execute(select(func.sum(QueryLog.cost_usd)).where(QueryLog.user_id == current_user.id))
         total_cost = round(cost_res.scalar() or 0.0, 4)
 
         # Get logs from the last 30 days to process timelines in Python (fully dialect agnostic)
         cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-        logs_res = await db.execute(select(QueryLog).where(QueryLog.created_at >= cutoff))
+        logs_res = await db.execute(
+            select(QueryLog)
+            .where(QueryLog.created_at >= cutoff)
+            .where(QueryLog.user_id == current_user.id)
+        )
         logs = logs_res.scalars().all()
 
         # Group queries by day

@@ -100,7 +100,7 @@ export default function LoginPage() {
             className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
             style={{ background: "linear-gradient(135deg, var(--cobalt), var(--cobalt-dim))", boxShadow: "0 8px 24px var(--cobalt-glow-strong)" }}
           >
-            <Shield size={24} className="text-white" />
+            <Shield size={24} style={{ color: "var(--text-inverse)" }} />
           </div>
           <h2
             className="text-3xl font-semibold mb-2"
@@ -131,33 +131,37 @@ export default function LoginPage() {
           >
             <button
               type="button"
-              className={`flex-1 py-2 text-center rounded-lg text-sm font-medium transition-all duration-200 ${
-                isLogin
-                  ? "bg-slate-800 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white"
-              }`}
+              className="flex-1 py-2 text-center rounded-lg text-sm font-medium transition-all duration-200"
               onClick={() => {
                 setIsLogin(true);
                 setEmail("");
                 setPassword("");
               }}
-              style={{ cursor: "pointer", border: "none", background: isLogin ? "var(--bg-base)" : "transparent" }}
+              style={{ 
+                cursor: "pointer", 
+                border: "none", 
+                background: isLogin ? "var(--bg-base)" : "transparent",
+                color: isLogin ? "var(--text-primary)" : "var(--text-secondary)",
+                boxShadow: isLogin ? "var(--shadow-sm)" : "none"
+              }}
             >
               Sign In
             </button>
             <button
               type="button"
-              className={`flex-1 py-2 text-center rounded-lg text-sm font-medium transition-all duration-200 ${
-                !isLogin
-                  ? "bg-slate-800 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white"
-              }`}
+              className="flex-1 py-2 text-center rounded-lg text-sm font-medium transition-all duration-200"
               onClick={() => {
                 setIsLogin(false);
                 setEmail("");
                 setPassword("");
               }}
-              style={{ cursor: "pointer", border: "none", background: !isLogin ? "var(--bg-base)" : "transparent" }}
+              style={{ 
+                cursor: "pointer", 
+                border: "none", 
+                background: !isLogin ? "var(--bg-base)" : "transparent",
+                color: !isLogin ? "var(--text-primary)" : "var(--text-secondary)",
+                boxShadow: !isLogin ? "var(--shadow-sm)" : "none"
+              }}
             >
               Register
             </button>
@@ -179,7 +183,7 @@ export default function LoginPage() {
                       Username
                     </label>
                     <div className="relative">
-                      <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+                      <span className="absolute inset-y-0 left-3 flex items-center" style={{ color: "var(--text-secondary)" }}>
                         <User size={16} />
                       </span>
                       <input
@@ -204,7 +208,7 @@ export default function LoginPage() {
                       Full Name
                     </label>
                     <div className="relative">
-                      <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+                      <span className="absolute inset-y-0 left-3 flex items-center" style={{ color: "var(--text-secondary)" }}>
                         <User size={16} />
                       </span>
                       <input
@@ -231,7 +235,7 @@ export default function LoginPage() {
                 Email Address
               </label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+                <span className="absolute inset-y-0 left-3 flex items-center" style={{ color: "var(--text-secondary)" }}>
                   <Mail size={16} />
                 </span>
                 <input
@@ -256,7 +260,7 @@ export default function LoginPage() {
                 Password
               </label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+                <span className="absolute inset-y-0 left-3 flex items-center" style={{ color: "var(--text-secondary)" }}>
                   <Lock size={16} />
                 </span>
                 <input
