@@ -388,6 +388,136 @@ async def chat_stream(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@router.post("/ai-stream")
+async def ai_chat_stream(
+    request: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
+    """Fast direct AI chat: streams response from Gemini/Groq (with fallback) without the RAG pipeline.
+
+    This endpoint bypasses retrieval, knowledge graph, reranking, and verification,
+    sending the user message directly to the LLM for near-instant streaming responses.
+    """
+    from app.llm.factory import LLMMessage, stream_with_fallback
+    import time
+
+    user_id = str(current_user.id) if current_user else "anonymous"
+
+    # Get or create conversation
+    conversation = None
+    history = []
+
+    if request.conversation_id and current_user:
+        result = await db.execute(
+            select(Conversation).where(Conversation.id == request.conversation_id)
+        )
+        conversation = result.scalar_one_or_none()
+        if conversation:
+            msg_result = await db.execute(
+                select(Message)
+                .where(Message.conversation_id == conversation.id)
+                .order_by(Message.created_at)
+            )
+            messages = msg_result.scalars().all()
+            history = [{"role": m.role, "content": m.content} for m in messages[-10:]]
+
+    if not conversation and current_user:
+        conversation = Conversation(
+            user_id=current_user.id,
+            title=request.message[:100],
+            model_used=request.model,
+        )
+        db.add(conversation)
+        await db.flush()
+
+    # Save user message
+    if conversation:
+        user_msg = Message(
+            conversation_id=conversation.id,
+            role="user",
+            content=request.message,
+        )
+        db.add(user_msg)
+        await db.flush()
+
+    async def generate():
+        start_time = time.time()
+        full_response = ""
+        provider_used = "unknown"
+
+        try:
+            # Build LLM messages from conversation history
+            llm_messages = [
+                LLMMessage(
+                    role="system",
+                    content=(
+                        "You are Manthan AI, an intelligent and helpful assistant. "
+                        "Respond clearly, concisely, and accurately. Use markdown formatting "
+                        "for better readability when appropriate. Be conversational and friendly."
+                    ),
+                )
+            ]
+            for h in history:
+                llm_messages.append(LLMMessage(role=h["role"], content=h["content"]))
+            llm_messages.append(LLMMessage(role="user", content=request.message))
+
+            # Stream directly from LLM with automatic fallback (Gemini → Groq → OpenAI → ...)
+            async for chunk in stream_with_fallback(
+                messages=llm_messages,
+                provider_name=request.provider or settings.DEFAULT_LLM_PROVIDER,
+                model=request.model,
+                temperature=0.7,
+                max_tokens=4096,
+            ):
+                full_response += chunk
+                yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            # Save assistant message
+            if conversation:
+                assistant_msg = Message(
+                    conversation_id=conversation.id,
+                    role="assistant",
+                    content=full_response,
+                    model_used=request.model or settings.DEFAULT_LLM_MODEL,
+                    latency_ms=latency_ms,
+                )
+                db.add(assistant_msg)
+
+            # Log query
+            tok_in = len(request.message) // 4
+            tok_out = len(full_response) // 4
+            cost_usd = (tok_in * 0.00015 / 1000) + (tok_out * 0.0006 / 1000)
+
+            query_log = QueryLog(
+                user_id=current_user.id if current_user else None,
+                query_text=request.message,
+                query_type="ai_chat",
+                intent="general",
+                model_used=request.model or settings.DEFAULT_LLM_MODEL,
+                retrieval_strategy="direct_llm",
+                results_count=0,
+                latency_ms=latency_ms,
+                token_input=tok_in,
+                token_output=tok_out,
+                cost_usd=cost_usd,
+                confidence_score=1.0,
+                hallucination_score=0.0,
+            )
+            db.add(query_log)
+            await db.commit()
+
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception as e:
+            logger.error("AI stream failed: %s", e, exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @router.get("/conversations")
 async def list_conversations(
     db: AsyncSession = Depends(get_db),

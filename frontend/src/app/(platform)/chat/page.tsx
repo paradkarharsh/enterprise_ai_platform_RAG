@@ -264,7 +264,7 @@ export default function ChatPage() {
       return;
     }
 
-    // ── AI Chat Mode (existing streaming pipeline) ──
+    // ── AI Chat Mode (direct LLM streaming — Gemini/Groq with fallback) ──
     try {
       const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
       const controller = new AbortController();
@@ -275,7 +275,7 @@ export default function ChatPage() {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`${API_BASE}/api/v1/chat/stream`, {
+      const res = await fetch(`${API_BASE}/api/v1/chat/ai-stream`, {
         method: "POST",
         headers,
         body: JSON.stringify({ message: userMessage, stream: true }),
