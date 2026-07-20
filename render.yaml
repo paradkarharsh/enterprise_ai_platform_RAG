@@ -6,7 +6,7 @@ services:
     name: manthan-ai-backend
     env: docker
     dockerContext: backend
-    dockerfilePath: Dockerfile
+    dockerfilePath: backend/Dockerfile
     plan: free
     healthCheckPath: /health
     envVars:
