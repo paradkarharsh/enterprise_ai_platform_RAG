@@ -23,7 +23,15 @@ async def init_redis():
             max_connections=20,
         )
         await redis_client.ping()
-        logger.info("✅ Redis connected at %s:%s", settings.REDIS_HOST, settings.REDIS_PORT)
+        # Extract host and port from REDIS_URL for cleaner logging
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(settings.REDIS_URL)
+            host = parsed.hostname or settings.REDIS_HOST
+            port = parsed.port or settings.REDIS_PORT
+        except Exception:
+            host, port = settings.REDIS_HOST, settings.REDIS_PORT
+        logger.info("✅ Redis connected at %s:%s", host, port)
     except Exception as e:
         logger.warning("⚠️ Redis connection failed: %s. Caching disabled.", e)
         redis_client = None

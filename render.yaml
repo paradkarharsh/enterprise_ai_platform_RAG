@@ -1,0 +1,80 @@
+# Render Blueprint Specification
+# See https://render.com/docs/blueprints for details.
+services:
+  # Web service for the FastAPI Backend
+  - type: web
+    name: manthan-ai-backend
+    env: docker
+    dockerContext: backend
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: APP_NAME
+        value: "Manthan AI — Enterprise Knowledge Intelligence Platform"
+      
+      # Connect to PostgreSQL database managed by Render
+      - key: DATABASE_URL
+        fromDatabase:
+          name: manthan-postgres
+          property: connectionString
+      
+      # Connect to Redis instance managed by Render
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: manthan-redis
+          property: connectionString
+
+      # Generate secure random keys automatically on deploy
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      # AI Provider keys (user will be prompted to enter these if not set)
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+        required: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+        required: false
+      - key: GROQ_API_KEY
+        sync: false
+        required: false
+
+      # Default providers
+      - key: DEFAULT_LLM_PROVIDER
+        value: gemini
+      - key: DEFAULT_LLM_MODEL
+        value: gemini-2.0-flash
+      - key: DEFAULT_EMBEDDING_PROVIDER
+        value: gemini
+      - key: DEFAULT_EMBEDDING_MODEL
+        value: models/gemini-embedding-2
+      - key: EMBEDDING_DIMENSION
+        value: 1536
+      - key: DEFAULT_VECTOR_STORE
+        value: chroma
+
+# Managed database (PostgreSQL)
+databases:
+  - name: manthan-postgres
+    plan: free
+    databaseName: enterprise_ai
+    user: postgres
+
+# Managed Redis instance (Private service)
+services:
+  - type: redis
+    name: manthan-redis
+    plan: free
+    ipAllowList: [] # Access allowed only from other services in the same Render team/account

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
         if env_url:
             if env_url.startswith("postgresql://"):
                 env_url = env_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif env_url.startswith("postgres://"):
+                env_url = env_url.replace("postgres://", "postgresql+asyncpg://", 1)
             return env_url
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
@@ -43,6 +45,10 @@ class Settings(BaseSettings):
         if env_url:
             if env_url.startswith("postgresql+asyncpg://"):
                 env_url = env_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+            elif env_url.startswith("postgres://"):
+                env_url = env_url.replace("postgres://", "postgresql://", 1)
+            elif env_url.startswith("postgresql://"):
+                pass
             return env_url
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
@@ -54,6 +60,10 @@ class Settings(BaseSettings):
 
     @property
     def REDIS_URL(self) -> str:
+        import os
+        env_url = os.environ.get("REDIS_URL")
+        if env_url:
+            return env_url
         auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
         return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 

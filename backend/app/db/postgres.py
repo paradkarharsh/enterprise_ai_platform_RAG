@@ -20,6 +20,8 @@ if db_url or settings.ENVIRONMENT == "production" or os.environ.get("ENVIRONMENT
     url = db_url or settings.DATABASE_URL
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
     engine = create_async_engine(
         url,
         echo=settings.DEBUG,
