@@ -100,8 +100,8 @@ export default function ChatPage() {
     }
 
     // Convert graph results to ReactFlow nodes and edges
-    const nodes = [];
-    const edges = [];
+    const nodes: any[] = [];
+    const edges: any[] = [];
     const nodeMap = new Map();
     let nodeId = 0;
 
