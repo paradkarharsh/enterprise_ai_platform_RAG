@@ -217,7 +217,8 @@ export default function ChatPage() {
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      // Increased timeout to 150 seconds to accommodate slow cold-starts on Render free tier
+      const timeoutId = setTimeout(() => controller.abort(), 150000);
 
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) {
@@ -305,7 +306,7 @@ export default function ChatPage() {
       const rawMsg = error.message || "";
 
       if (error.name === "AbortError" || rawMsg.includes("abort")) {
-        errorMsg = "⏱️ **Connection timed out.** The backend server didn't respond within 60 seconds.\n\n> Start the backend with: `uvicorn app.main:app --port 8000`";
+        errorMsg = "⏱️ **Connection timed out.** The backend server didn't respond within 150 seconds. (If you are using a free Render instance, it might still be waking up! Try again in a minute).\n\n> Start the backend locally with: `uvicorn app.main:app --port 8000`";
       } else if (rawMsg.includes("Failed to fetch") || rawMsg.includes("NetworkError")) {
         errorMsg = "🔌 **Cannot connect to backend.** The server may not be running.\n\n> Start the backend with: `uvicorn app.main:app --port 8000`";
       } else if (rawMsg.includes("quota") || rawMsg.includes("429")) {
