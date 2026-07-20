@@ -55,7 +55,7 @@ export default function TicketsPage() {
     setIsLoading(true);
     try {
       const data = (await api.tickets.list(token)) as Record<string, unknown>[];
-      const mapped: SupportTicket[] = data.map((t: Record<string, unknown> & { id: string, summary: string, status: string, priority: string, department: string, created_at: string, updated_at: string }) => ({
+      const mapped: SupportTicket[] = data.map((t: any) => ({
         id: t.id.slice(0, 8).toUpperCase(),
         realId: t.id,
         title: t.summary.split("\n")[0] || "No summary provided",

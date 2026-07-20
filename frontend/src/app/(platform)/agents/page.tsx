@@ -86,7 +86,7 @@ export default function AgentsPage() {
     if (!token) return;
     try {
       const data = await api.upload.list(token);
-      setDocuments(data as DocumentItem[]);
+      setDocuments(data as any as DocumentItem[]);
     } catch (err) {
       console.error("Failed to fetch documents:", err);
     }

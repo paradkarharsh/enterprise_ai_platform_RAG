@@ -73,7 +73,7 @@ export default function KnowledgeBasePage() {
     if (!token) return;
     try {
       // 1. Fetch dashboard metrics
-      const dashboard = (await api.analytics.dashboard(token)) as Record<string, unknown>;
+      const dashboard = (await api.analytics.dashboard(token)) as any;
       const storageMb = dashboard.storage_used_mb || 0;
       const storageStr = storageMb > 1024 
         ? `${(storageMb / 1024).toFixed(2)} GB` 
@@ -87,7 +87,7 @@ export default function KnowledgeBasePage() {
       });
 
       // 2. Fetch real documents list
-      const docs = (await api.upload.list(token)) as UploadedDoc[];
+      const docs = (await api.upload.list(token)) as any as UploadedDoc[];
       setDocsList(docs.map((doc: UploadedDoc) => ({
         id: doc.id,
         name: doc.title,
