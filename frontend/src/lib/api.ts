@@ -31,6 +31,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const res = await fetch(`${API_BASE}${API_PREFIX}${endpoint}`, config);
 
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      localStorage.removeItem("auth-storage");
+      window.location.href = "/login?expired=1";
+      throw new Error("Session expired. Please log in again.");
+    }
     const error = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(error.detail || `API Error: ${res.status}`);
   }

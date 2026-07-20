@@ -213,58 +213,7 @@ export default function ChatPage() {
       isStreaming: true,
     });
 
-    // ── Knowledge Base Search Mode ──
-    if (searchMode === "kb") {
-      try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
-
-        const res = await fetch(`${API_BASE}/api/v1/search`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ query: userMessage, search_type: "hybrid", top_k: 10 }),
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const results = await res.json();
-
-        if (!Array.isArray(results) || results.length === 0) {
-          updateLastMessage(
-            "📭 **No matching documents found in the knowledge base.**\n\n" +
-            "> Try rephrasing your query, or switch to **AI Chat** mode for a general AI-powered answer."
-          );
-        } else {
-          let md = `📚 **Knowledge Base Results** — ${results.length} document${results.length > 1 ? "s" : ""} found\n\n`;
-          results.forEach((r: any, i: number) => {
-            const score = (r.score * 100).toFixed(1);
-            const title = r.title || r.metadata?.filename || "Untitled";
-            const sourceType = r.source_type || r.metadata?.source_type || "Document";
-            const highlights = r.highlights && r.highlights.length > 0
-              ? r.highlights.map((h: string) => `> ${h}`).join("\n")
-              : `> ${(r.content || "").slice(0, 200)}...`;
-
-            md += `---\n`;
-            md += `**${i + 1}. ${title}**  \n`;
-            md += `🏷️ \`${sourceType}\` · 🎯 Relevance: **${score}%**\n\n`;
-            md += `${highlights}\n\n`;
-          });
-          updateLastMessage(md);
-        }
-      } catch (err: unknown) {
-        const error = err as Error;
-        updateLastMessage(`⚠️ **Knowledge Base search failed:** ${error.message}`);
-        addToast("Knowledge Base search failed", "error");
-      } finally {
-        setLoading(false);
-        setIsStreaming(false);
-      }
-      return;
-    }
-
-    // ── AI Chat Mode (direct LLM streaming — Gemini/Groq with fallback) ──
+    // ── AI Chat & Knowledge Base Streaming Mode ──
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const controller = new AbortController();
@@ -275,7 +224,10 @@ export default function ChatPage() {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`${API_BASE}/api/v1/chat/ai-stream`, {
+      // Use the full RAG pipeline for Knowledge Base, otherwise use direct AI stream
+      const endpoint = searchMode === "kb" ? "/api/v1/chat/stream" : "/api/v1/chat/ai-stream";
+
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers,
         body: JSON.stringify({ message: userMessage, stream: true }),
@@ -292,6 +244,7 @@ export default function ChatPage() {
       const decoder = new TextDecoder();
       let accumulated = "";
       const traces: string[] = [];
+      let citationsMd = "";
 
       let streamBuffer = "";
 
@@ -311,11 +264,22 @@ export default function ChatPage() {
                   const traceBlock = traces.length > 0
                     ? `> ⚙️ **Agent Pipeline Trace:**\n${traces.map(t => `> * ${t}`).join("\n")}\n\n`
                     : "";
-                  updateLastMessage(traceBlock + accumulated);
+                  updateLastMessage(traceBlock + accumulated + citationsMd);
                 } else if (data.type === "trace") {
                   traces.push(data.content);
                   const traceBlock = `> ⚙️ **Agent Pipeline Trace:**\n${traces.map(t => `> * ${t}`).join("\n")}\n\n`;
-                  updateLastMessage(traceBlock + accumulated);
+                  updateLastMessage(traceBlock + accumulated + citationsMd);
+                } else if (data.type === "citations") {
+                  if (Array.isArray(data.content) && data.content.length > 0) {
+                    citationsMd = "\n\n---\n**📚 Sources:**\n";
+                    data.content.forEach((cite: any, i: number) => {
+                      citationsMd += `${i + 1}. **${cite.title || cite.metadata?.filename || "Untitled"}**\n`;
+                    });
+                    const traceBlock = traces.length > 0
+                      ? `> ⚙️ **Agent Pipeline Trace:**\n${traces.map(t => `> * ${t}`).join("\n")}\n\n`
+                      : "";
+                    updateLastMessage(traceBlock + accumulated + citationsMd);
+                  }
                 } else if (data.type === "graph") {
                   // Attach graph data to the last assistant message
                   const lastMsg = messages[messages.length - 1];

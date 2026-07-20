@@ -37,7 +37,10 @@ async def get_dashboard(db: AsyncSession = Depends(get_db), current_user: User =
         storage_mb = round(storage_bytes / (1024 * 1024), 2)
 
         # Active Users count
-        users_res = await db.execute(select(func.count(User.id)))
+        if current_user.role == "admin":
+            users_res = await db.execute(select(func.count(User.id)))
+        else:
+            users_res = await db.execute(select(func.count(User.id)).where(User.id == current_user.id))
         active_users = users_res.scalar() or 1
 
         # Average Latency
@@ -56,14 +59,15 @@ async def get_dashboard(db: AsyncSession = Depends(get_db), current_user: User =
         # Neo4j Entity & Relationship counts
         total_nodes = 0
         total_relationships = 0
-        try:
-            from app.knowledge_graph.engine import get_kg_engine
-            engine = get_kg_engine()
-            stats = await engine.get_graph_stats()
-            total_nodes = stats.get("total_nodes", 0)
-            total_relationships = stats.get("total_relationships", 0)
-        except Exception as graph_err:
-            logger.warning("Failed to retrieve Neo4j graph stats: %s", graph_err)
+        if current_user.role == "admin":
+            try:
+                from app.knowledge_graph.engine import get_kg_engine
+                engine = get_kg_engine()
+                stats = await engine.get_graph_stats()
+                total_nodes = stats.get("total_nodes", 0)
+                total_relationships = stats.get("total_relationships", 0)
+            except Exception as graph_err:
+                logger.warning("Failed to retrieve Neo4j graph stats: %s", graph_err)
 
         return {
             "total_documents": total_docs,
