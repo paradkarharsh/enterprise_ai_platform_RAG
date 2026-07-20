@@ -18,6 +18,8 @@ services:
         value: "false"
       - key: APP_NAME
         value: "Manthan AI — Enterprise Knowledge Intelligence Platform"
+      - key: CORS_ORIGINS
+        value: '["*"]'
       
       # Connect to PostgreSQL database managed by Render
       - key: DATABASE_URL
