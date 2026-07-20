@@ -75,5 +75,3 @@ services:
 databases:
   - name: manthan-postgres
     plan: free
-    databaseName: enterprise_ai
-    user: postgres
