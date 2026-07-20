@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Send, RotateCcw, Copy, ThumbsUp, ThumbsDown,
   Bot, User, Loader2, Paperclip, Cpu, Globe, Code, Zap, FileText,
+  Search, BookOpen,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useChatStore, useToastStore, useAuthStore } from "@/lib/store";
@@ -21,6 +22,7 @@ export default function ChatPage() {
   const [prompts, setPrompts] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [searchMode, setSearchMode] = useState<"ai" | "kb">("ai");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -211,6 +213,58 @@ export default function ChatPage() {
       isStreaming: true,
     });
 
+    // ── Knowledge Base Search Mode ──
+    if (searchMode === "kb") {
+      try {
+        const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        const res = await fetch(`${API_BASE}/api/v1/search`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ query: userMessage, search_type: "hybrid", top_k: 10 }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const results = await res.json();
+
+        if (!Array.isArray(results) || results.length === 0) {
+          updateLastMessage(
+            "📭 **No matching documents found in the knowledge base.**\n\n" +
+            "> Try rephrasing your query, or switch to **AI Chat** mode for a general AI-powered answer."
+          );
+        } else {
+          let md = `📚 **Knowledge Base Results** — ${results.length} document${results.length > 1 ? "s" : ""} found\n\n`;
+          results.forEach((r: any, i: number) => {
+            const score = (r.score * 100).toFixed(1);
+            const title = r.title || r.metadata?.filename || "Untitled";
+            const sourceType = r.source_type || r.metadata?.source_type || "Document";
+            const highlights = r.highlights && r.highlights.length > 0
+              ? r.highlights.map((h: string) => `> ${h}`).join("\n")
+              : `> ${(r.content || "").slice(0, 200)}...`;
+
+            md += `---\n`;
+            md += `**${i + 1}. ${title}**  \n`;
+            md += `🏷️ \`${sourceType}\` · 🎯 Relevance: **${score}%**\n\n`;
+            md += `${highlights}\n\n`;
+          });
+          updateLastMessage(md);
+        }
+      } catch (err: unknown) {
+        const error = err as Error;
+        updateLastMessage(`⚠️ **Knowledge Base search failed:** ${error.message}`);
+        addToast("Knowledge Base search failed", "error");
+      } finally {
+        setLoading(false);
+        setIsStreaming(false);
+      }
+      return;
+    }
+
+    // ── AI Chat Mode (existing streaming pipeline) ──
     try {
       const API_BASE = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
       const controller = new AbortController();
@@ -266,9 +320,6 @@ export default function ChatPage() {
                   // Attach graph data to the last assistant message
                   const lastMsg = messages[messages.length - 1];
                   if (lastMsg && lastMsg.role === "assistant") {
-                    // We need to update the message with graphData
-                    // Since we're using Zustand, we can't directly mutate, so we'll use a different approach
-                    // Store the graphData in a ref or state, then apply when the message is complete
                     const currentMessages = [...messages];
                     currentMessages[currentMessages.length - 1] = {
                       ...currentMessages[currentMessages.length - 1],
@@ -550,21 +601,92 @@ export default function ChatPage() {
       {/* ── Input Area ── */}
       <div className="px-6 pb-5 pt-3" style={{ borderTop: "1px solid var(--slate-800)" }}>
         <div style={{ maxWidth: "760px", margin: "0 auto", position: "relative" }}>
+
+          {/* ── Search Mode Toggle ── */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: "10px",
+            }}
+          >
+            <div
+              style={{
+                display: "inline-flex",
+                background: "var(--bg-glass)",
+                backdropFilter: "blur(16px) saturate(180%)",
+                border: "1px solid var(--border-default)",
+                borderRadius: "14px",
+                padding: "4px",
+                gap: "4px",
+                position: "relative",
+              }}
+            >
+              {([
+                { key: "ai" as const, label: "AI Chat", icon: <Bot size={14} />, color: "var(--cobalt)" },
+                { key: "kb" as const, label: "Knowledge Base", icon: <BookOpen size={14} />, color: "#10b981" },
+              ]).map((mode) => (
+                <motion.button
+                  key={mode.key}
+                  onClick={() => setSearchMode(mode.key)}
+                  whileTap={{ scale: 0.97 }}
+                  style={{
+                    position: "relative",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "7px 16px",
+                    borderRadius: "10px",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    fontFamily: "var(--font-body)",
+                    letterSpacing: "-0.01em",
+                    transition: "color 0.25s",
+                    color: searchMode === mode.key ? "white" : "var(--text-tertiary)",
+                    background: "transparent",
+                    zIndex: 1,
+                  }}
+                >
+                  {mode.icon}
+                  {mode.label}
+                  {searchMode === mode.key && (
+                    <motion.div
+                      layoutId="searchModeIndicator"
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        borderRadius: "10px",
+                        background: mode.color,
+                        boxShadow: `0 4px 16px ${mode.key === "ai" ? "rgba(46,91,255,0.35)" : "rgba(16,185,129,0.35)"}`,
+                        zIndex: -1,
+                      }}
+                    />
+                  )}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
           <div
             style={{
               background: "var(--bg-glass)",
               backdropFilter: "blur(24px) saturate(180%)",
-              border: "1px solid var(--border-default)",
+              border: `1px solid ${searchMode === "kb" ? "rgba(16,185,129,0.3)" : "var(--border-default)"}`,
               borderRadius: "24px",
               padding: "12px 16px",
               display: "flex",
               alignItems: "flex-end",
               gap: "12px",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)",
+              boxShadow: searchMode === "kb"
+                ? "0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(16,185,129,0.1)"
+                : "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)",
               transition: "border-color 0.3s, box-shadow 0.3s",
             }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--border-hover)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.4), 0 0 0 2px var(--cobalt-glow)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-default)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)"; }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = searchMode === "kb" ? "rgba(16,185,129,0.5)" : "var(--border-hover)"; e.currentTarget.style.boxShadow = searchMode === "kb" ? "0 8px 32px rgba(0,0,0,0.4), 0 0 0 2px rgba(16,185,129,0.2)" : "0 8px 32px rgba(0,0,0,0.4), 0 0 0 2px var(--cobalt-glow)"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = searchMode === "kb" ? "rgba(16,185,129,0.3)" : "var(--border-default)"; e.currentTarget.style.boxShadow = searchMode === "kb" ? "0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(16,185,129,0.1)" : "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)"; }}
           >
             <input
               type="file"
@@ -584,7 +706,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask anything about your knowledge base..."
+              placeholder={searchMode === "kb" ? "Search your knowledge base..." : "Ask anything about your knowledge base..."}
               rows={1}
               className="flex-1 resize-none bg-transparent outline-none"
               style={{
@@ -609,17 +731,25 @@ export default function ChatPage() {
               disabled={!input.trim() || isLoading}
               className="flex-shrink-0"
               style={{
-                background: (!input.trim() || isLoading) ? "var(--slate-800)" : "linear-gradient(135deg, var(--cobalt), var(--cobalt-light))",
+                background: (!input.trim() || isLoading)
+                  ? "var(--slate-800)"
+                  : searchMode === "kb"
+                    ? "linear-gradient(135deg, #10b981, #059669)"
+                    : "linear-gradient(135deg, var(--cobalt), var(--cobalt-light))",
                 color: (!input.trim() || isLoading) ? "var(--text-tertiary)" : "white",
                 padding: "10px",
                 borderRadius: "50%",
                 border: "none",
                 cursor: (!input.trim() || isLoading) ? "not-allowed" : "pointer",
-                boxShadow: (!input.trim() || isLoading) ? "none" : "0 4px 12px var(--cobalt-glow-strong)",
+                boxShadow: (!input.trim() || isLoading)
+                  ? "none"
+                  : searchMode === "kb"
+                    ? "0 4px 12px rgba(16,185,129,0.35)"
+                    : "0 4px 12px var(--cobalt-glow-strong)",
                 transition: "all 0.2s",
               }}
             >
-              {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+              {isLoading ? <Loader2 size={18} className="animate-spin" /> : searchMode === "kb" ? <Search size={18} /> : <Send size={18} />}
             </motion.button>
           </div>
           <p className="text-center mt-3" style={{ color: "var(--text-tertiary)", fontSize: "0.6875rem", fontFamily: "var(--font-mono)" }}>
