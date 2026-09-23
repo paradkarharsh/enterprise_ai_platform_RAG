@@ -22,7 +22,7 @@ async def speech_to_text(audio: UploadFile = File(...)):
         return {"text": "This is a mock transcription because no OpenAI API key was configured."}
 
     try:
-        ext = os.path.splitext(audio.filename)[1] or ".wav"
+        ext = os.path.splitext(audio.filename or "")[1] or ".wav"
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
             shutil.copyfileobj(audio.file, tmp)
             tmp_path = tmp.name

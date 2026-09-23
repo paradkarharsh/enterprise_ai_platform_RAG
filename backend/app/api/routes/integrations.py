@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 import logging
 import httpx
@@ -30,7 +31,7 @@ async def process_slack_message(text: str, channel: str):
         logger.error(f"Error in process_slack_message task: {e}")
 
 
-async def process_discord_message(text: str, webhook_url: str = None):
+async def process_discord_message(text: str, webhook_url: Optional[str] = None):
     """Background task to run RAG pipeline and post response to Discord."""
     try:
         logger.info(f"Processing Discord message: '{text}'")

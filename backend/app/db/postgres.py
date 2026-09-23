@@ -2,6 +2,7 @@
 PostgreSQL async connection management using SQLAlchemy.
 """
 import logging
+from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.config import get_settings
 from app.db.models import Base
@@ -59,7 +60,7 @@ async def close_db():
     logger.info(f"{db_type} connections closed")
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency: get async database session."""
     async with async_session() as session:
         try:

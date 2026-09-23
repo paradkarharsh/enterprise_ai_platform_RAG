@@ -4,13 +4,13 @@ Query Understanding → Knowledge Graph → Retriever → Reranker → Verifier 
 """
 import logging
 import time
-from typing import TypedDict, Optional, List, Dict, Any, Annotated
+from typing import TypedDict, Optional, List, Dict, Any, Annotated, cast
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     """Shared state flowing through the agent graph."""
     # Input
     query: str
@@ -18,6 +18,8 @@ class AgentState(TypedDict):
     user_id: Optional[str]
     model: Optional[str]
     provider: Optional[str]
+    user_api_keys: Optional[Dict[str, str]]
+    api_key: Optional[str]
 
     # Query Understanding
     intent: Optional[str]
@@ -50,7 +52,7 @@ class AgentState(TypedDict):
     citations: Optional[List[Dict]]
     agent_trace: Optional[List[Dict]]
     total_latency_ms: Optional[int]
-    token_usage: Optional[Dict[str, int]]
+    token_usage: Optional[Dict[str, Any]]
 
 
 class AgentTrace(BaseModel):
@@ -71,7 +73,13 @@ async def query_understanding_agent(state: AgentState) -> AgentState:
     try:
         from app.agents.intents import detect_intent
         
-        data = await detect_intent(state["query"], provider=state.get("provider"), model=state.get("model"))
+        data = await detect_intent(
+            state["query"],
+            provider=state.get("provider"),
+            model=state.get("model"),
+            user_api_keys=state.get("user_api_keys"),
+            api_key=state.get("api_key"),
+        )
         
         state["intent"] = data.get("intents", ["general"])[0]
         state["intents"] = data.get("intents", ["general"])
@@ -108,7 +116,7 @@ async def knowledge_graph_agent(state: AgentState) -> AgentState:
         from app.knowledge_graph.engine import get_kg_engine
 
         engine = get_kg_engine()
-        query = state.get("rewritten_query", state["query"])
+        query = state.get("rewritten_query") or state.get("query") or ""
 
         # Generate Cypher from natural language
         cypher = await engine.natural_language_to_cypher(query)
@@ -150,7 +158,7 @@ async def retriever_agent(state: AgentState) -> AgentState:
     try:
         from app.retrieval.retriever import HybridRetriever
 
-        query = state.get("rewritten_query", state["query"])
+        query = state.get("rewritten_query") or state.get("query") or ""
         retriever = HybridRetriever()
 
         results = await retriever.retrieve(
@@ -178,7 +186,7 @@ async def retriever_agent(state: AgentState) -> AgentState:
     trace.end_time = time.time()
     trace.latency_ms = int((trace.end_time - trace.start_time) * 1000)
 
-    traces = state.get("agent_trace", []) or []
+    traces = state.get("agent_trace") or []
     traces.append(trace.model_dump())
     state["agent_trace"] = traces
     return state
@@ -189,22 +197,22 @@ async def reranker_agent(state: AgentState) -> AgentState:
     trace = AgentTrace(agent="reranker", status="running", start_time=time.time())
 
     try:
-        chunks = state.get("retrieved_chunks", [])
+        chunks = state.get("retrieved_chunks") or []
         if not chunks:
             state["reranked_chunks"] = []
         else:
             from app.reranking.reranker import Reranker
 
-            query = state.get("rewritten_query", state["query"])
+            query = state.get("rewritten_query") or state.get("query") or ""
             reranker = Reranker()
             reranked = reranker.rerank(query, chunks, top_k=10)
             state["reranked_chunks"] = reranked
 
         trace.status = "completed"
-        trace.output_summary = f"Reranked to {len(state.get('reranked_chunks', []))} chunks"
+        trace.output_summary = f"Reranked to {len(state.get('reranked_chunks') or [])} chunks"
     except Exception as e:
         logger.error("Reranker agent failed: %s", e)
-        state["reranked_chunks"] = state.get("retrieved_chunks", [])[:10]
+        state["reranked_chunks"] = (state.get("retrieved_chunks") or [])[:10]
         trace.status = "failed"
         trace.error = str(e)
 
@@ -273,14 +281,14 @@ Return ONLY valid JSON."""),
         # Check for Human Escalation
         from app.agents.escalation import check_escalation
         # Convert history dicts to string for summary
-        history_str = "\\n".join([f"{m['role']}: {m['content']}" for m in state.get("conversation_history", [])[-3:]])
+        history_str = "\\n".join([f"{m.get('role', '')}: {m.get('content', '')}" for m in (state.get("conversation_history") or [])[-3:]])
         escalation = await check_escalation(
-            query=query,
-            confidence_score=state["confidence_score"],
+            query=query or "",
+            confidence_score=float(state.get("confidence_score") or 0.0),
             threshold=0.5, # Configurable
             user_id=state.get("user_id"),
             conversation_summary=history_str,
-            department=state.get("domain", "general")
+            department=state.get("domain") or "general"
         )
         state["escalation"] = escalation
 
@@ -310,10 +318,10 @@ async def response_agent(state: AgentState) -> AgentState:
     try:
         from app.llm.factory import generate_with_fallback, LLMMessage
 
-        query = state["query"]
-        sources = state.get("verified_sources", [])
-        graph_context = state.get("graph_context", "")
-        history = state.get("conversation_history", [])
+        query = state.get("query") or ""
+        sources = state.get("verified_sources") or []
+        graph_context = state.get("graph_context") or ""
+        history = state.get("conversation_history") or []
 
         # Build context
         context_parts = []
@@ -322,13 +330,21 @@ async def response_agent(state: AgentState) -> AgentState:
         if sources:
             context_parts.append("**Retrieved Document Chunks:**")
             for i, s in enumerate(sources[:7]):
-                context_parts.append(f"**[Source {i+1}]** (Score: {s.get('score', 0):.2f})\n{s['content']}")
+                meta = s.get("metadata") or {}
+                title = (
+                    s.get("title")
+                    or meta.get("title")
+                    or meta.get("filename")
+                    or meta.get("document_title")
+                    or f"Document {i+1}"
+                )
+                context_parts.append(f"[Source {i+1}] {title} (Score: {s.get('score', 0):.2f})\n{s.get('content', '')}")
 
         context = "\n\n---\n\n".join(context_parts) if context_parts else "No specific context found."
 
         # Merge specialized prompts based on intents
         from app.agents.specialized import call_specialized_agent
-        intents = state.get("intents", ["general"])
+        intents = state.get("intents") or ["general"]
         
         prompts_dict = {
             "billing": "Role: Billing Support Agent. Handle invoices, payments, refunds, subscriptions, and billing history. Use precise financial language.",
@@ -342,7 +358,7 @@ async def response_agent(state: AgentState) -> AgentState:
         if not specialized_roles:
             specialized_roles = "Role: General Enterprise Support Agent. Provide helpful, accurate assistance."
 
-        escalation = state.get("escalation", {})
+        escalation = state.get("escalation") or {}
         escalation_msg = ""
         if escalation.get("escalated"):
             ticket_id = escalation.get("ticket_id", "N/A")
@@ -374,25 +390,36 @@ Context:
             model=state.get("model"),
             temperature=0.7,
             max_tokens=8192,
+            api_key=state.get("api_key"),
+            user_api_keys=state.get("user_api_keys"),
         )
 
         state["response"] = response.content
         state["token_usage"] = {
             "input": response.token_input,
             "output": response.token_output,
-            "model": response.model,
-            "provider": response.provider,
+            "model": str(response.model or ""),
+            "provider": str(response.provider or ""),
         }
 
         # Build citations
         citations = []
         for i, s in enumerate(sources[:7]):
+            meta = s.get("metadata") or {}
+            title = (
+                s.get("title")
+                or meta.get("title")
+                or meta.get("filename")
+                or meta.get("document_title")
+                or f"Document {i+1}"
+            )
             citations.append({
                 "index": i + 1,
+                "title": title,
                 "chunk_id": s.get("id", ""),
                 "content": s.get("content", "")[:200],
                 "score": s.get("score", 0),
-                "metadata": s.get("metadata", {}),
+                "metadata": meta,
             })
         state["citations"] = citations
 
@@ -416,10 +443,12 @@ Context:
 
 async def run_agent_pipeline(
     query: str,
-    conversation_history: List[Dict[str, str]] = None,
-    user_id: str = None,
-    model: str = None,
-    provider: str = None,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+    user_id: Optional[str] = None,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    user_api_keys: Optional[Dict[str, str]] = None,
+    api_key: Optional[str] = None,
 ) -> AgentState:
     """Execute the full 6-agent RAG pipeline."""
     start_time = time.time()
@@ -430,7 +459,12 @@ async def run_agent_pipeline(
         "user_id": user_id,
         "model": model,
         "provider": provider,
+        "user_api_keys": user_api_keys,
+        "api_key": api_key,
         "intent": None,
+        "intents": ["general"],
+        "domain": "general",
+        "escalation": {"escalated": False},
         "rewritten_query": None,
         "metadata_filters": None,
         "sub_queries": None,
@@ -451,7 +485,7 @@ async def run_agent_pipeline(
     }
 
     # Execute pipeline via compiled LangGraph
-    state = await compiled_graph.ainvoke(state)
+    state = cast(AgentState, await compiled_graph.ainvoke(state))
 
     state["total_latency_ms"] = int((time.time() - start_time) * 1000)
 
@@ -476,8 +510,8 @@ async def parallel_retrieval_agent(state: AgentState) -> AgentState:
     
     state_kg = state.copy()
     state_ret = state.copy()
-    state_kg["agent_trace"] = list(state.get("agent_trace", []))
-    state_ret["agent_trace"] = list(state.get("agent_trace", []))
+    state_kg["agent_trace"] = list(state.get("agent_trace") or [])
+    state_ret["agent_trace"] = list(state.get("agent_trace") or [])
     
     results = await asyncio.gather(
         knowledge_graph_agent(state_kg),
@@ -492,9 +526,9 @@ async def parallel_retrieval_agent(state: AgentState) -> AgentState:
     state["retrieved_chunks"] = res_ret.get("retrieved_chunks")
     state["retrieval_strategy"] = res_ret.get("retrieval_strategy")
     
-    traces = list(state.get("agent_trace", []))
-    kg_new_traces = res_kg.get("agent_trace", [])[len(traces):]
-    ret_new_traces = res_ret.get("agent_trace", [])[len(traces):]
+    traces = list(state.get("agent_trace") or [])
+    kg_new_traces = (res_kg.get("agent_trace") or [])[len(traces):]
+    ret_new_traces = (res_ret.get("agent_trace") or [])[len(traces):]
     traces.extend(kg_new_traces)
     traces.extend(ret_new_traces)
     state["agent_trace"] = traces
@@ -502,7 +536,7 @@ async def parallel_retrieval_agent(state: AgentState) -> AgentState:
 
 
 # Initialize StateGraph with the state schema
-workflow = StateGraph(AgentState)
+workflow = StateGraph(cast(Any, AgentState))
 
 # Add pipeline agents as nodes
 workflow.add_node("query_understanding", query_understanding_agent)

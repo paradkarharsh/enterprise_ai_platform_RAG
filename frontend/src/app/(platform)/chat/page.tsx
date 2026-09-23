@@ -274,7 +274,7 @@ export default function ChatPage() {
                   if (Array.isArray(data.content) && data.content.length > 0) {
                     citationsMd = "\n\n---\n**📚 Sources:**\n";
                     data.content.forEach((cite: any, i: number) => {
-                      citationsMd += `${i + 1}. **${cite.title || cite.metadata?.filename || "Untitled"}**\n`;
+                      citationsMd += `${i + 1}. **${cite.title || cite.metadata?.title || cite.metadata?.filename || "Untitled"}**\n`;
                     });
                     const traceBlock = traces.length > 0
                       ? `> ⚙️ **Agent Pipeline Trace:**\n${traces.map(t => `> * ${t}`).join("\n")}\n\n`

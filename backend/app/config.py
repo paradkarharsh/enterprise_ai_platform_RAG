@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Global application settings."""
 
     # Application
-    APP_NAME: str = "Enterprise AI Knowledge Platform"
+    APP_NAME: str = "Manthan AI — Enterprise Knowledge Intelligence Platform"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"

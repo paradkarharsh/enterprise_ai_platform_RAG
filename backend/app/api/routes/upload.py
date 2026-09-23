@@ -278,7 +278,8 @@ async def upload_document(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     """Upload a document and trigger processing in a background task."""
-    ext = os.path.splitext(file.filename)[1].lower()
+    filename = file.filename or ""
+    ext = os.path.splitext(filename)[1].lower()
     if ext not in settings.ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
 

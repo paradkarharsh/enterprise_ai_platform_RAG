@@ -2,6 +2,7 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useSidebarStore, useSettingsStore, useAuthStore } from "@/lib/store";
 import { ToastContainer } from "@/components/ui/ToastContainer";
+import { ApiKeySetupModal } from "@/components/modals/ApiKeySetupModal";
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePathname, useRouter } from "next/navigation";
@@ -86,6 +87,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           </AnimatePresence>
         </motion.div>
       </div>
+      <ApiKeySetupModal />
       <ToastContainer />
     </div>
   );

@@ -2,7 +2,7 @@
 Human Escalation System.
 Creates support tickets when confidence is low or user requests human intervention.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 from app.db.postgres import get_db
 from app.db.models import SupportTicket
@@ -13,7 +13,7 @@ async def check_escalation(
     query: str, 
     confidence_score: float, 
     threshold: float = 0.5,
-    user_id: str = None,
+    user_id: Optional[str] = None,
     conversation_summary: str = "",
     department: str = "general"
 ) -> Dict[str, Any]:

@@ -1,0 +1,14 @@
+project-includes = [
+    "**/*.py*",
+]
+python-interpreter-path = ".venv/Scripts/python.exe"
+search-path = [
+    ".",
+    "app",
+]
+ignore-missing-imports = [
+    "sentence_transformers",
+    "faiss",
+    "pinecone",
+    "weaviate",
+]

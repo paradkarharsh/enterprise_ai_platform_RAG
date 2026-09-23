@@ -1,4 +1,5 @@
 """Health check and monitoring endpoints."""
+from typing import Any, Dict
 from fastapi import APIRouter
 from app.config import get_settings
 
@@ -19,7 +20,7 @@ async def health_check():
 @router.get("/health/detailed")
 async def detailed_health():
     """Detailed health check with dependency status."""
-    checks = {"app": "healthy"}
+    checks: Dict[str, Any] = {"app": "healthy"}
 
     try:
         from app.db.redis import redis_client

@@ -3,7 +3,8 @@ Chat API route: streaming AI chat with agent pipeline.
 """
 import logging
 import json
-from typing import Optional, List
+import uuid as _uuid
+from typing import Optional, List, Any, Dict
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,13 +16,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres import get_db
 from app.db.models import Conversation, Message, User, QueryLog
 from app.auth.jwt import get_current_user, get_optional_user
-from app.agents.graph import run_agent_pipeline
+from app.agents.graph import run_agent_pipeline, AgentState, compiled_graph
 from app.config import get_settings
 
 settings = get_settings()
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _to_uuid(val: Any) -> Optional[_uuid.UUID]:
+    """Safely convert string or UUID to UUID instance for SQLAlchemy queries."""
+    if not val:
+        return None
+    if isinstance(val, _uuid.UUID):
+        return val
+    try:
+        return _uuid.UUID(str(val))
+    except Exception:
+        return None
 
 
 class ChatRequest(BaseModel):
@@ -56,9 +69,10 @@ async def chat(
     conversation = None
     history = []
 
-    if request.conversation_id and current_user:
+    conv_id = _to_uuid(request.conversation_id)
+    if conv_id and current_user:
         result = await db.execute(
-            select(Conversation).where(Conversation.id == request.conversation_id)
+            select(Conversation).where(Conversation.id == conv_id)
         )
         conversation = result.scalar_one_or_none()
         if conversation:
@@ -90,14 +104,36 @@ async def chat(
         db.add(user_msg)
         await db.flush()
 
+    user_keys = current_user.get_all_llm_api_keys() if current_user else {}
+    if current_user and not current_user.has_configured_llm_key():
+        raise HTTPException(
+            status_code=400,
+            detail="No LLM API key configured. Please configure your API key in Settings or complete the API key setup modal."
+        )
+
+    req_prov = request.provider or (current_user.preferences.get("default_llm_provider") if current_user and current_user.preferences else None) or settings.DEFAULT_LLM_PROVIDER
+    active_key = user_keys.get(req_prov) or (user_keys.get("gemini") if "gemini" in user_keys else None)
+
     # Run agent pipeline
     state = await run_agent_pipeline(
         query=request.message,
         conversation_history=history,
         user_id=user_id,
         model=request.model,
-        provider=request.provider,
+        provider=req_prov,
+        user_api_keys=user_keys,
+        api_key=active_key,
     )
+
+    token_usage = state.get("token_usage") or {}
+    tok_in = int(token_usage.get("input", 0) or 0)
+    tok_out = int(token_usage.get("output", 0) or 0)
+    cost_usd = (tok_in * 0.00015 / 1000) + (tok_out * 0.0006 / 1000)
+
+    # Determine hallucination score (simple heuristic: 1.0 - confidence_score)
+    conf_raw = state.get("confidence_score")
+    conf_val = float(conf_raw) if isinstance(conf_raw, (int, float)) else 0.0
+    hallucination_score = round(1.0 - conf_val, 2) if isinstance(conf_raw, (int, float)) else None
 
     # Save assistant message
     message_id = str(uuid4())
@@ -105,10 +141,10 @@ async def chat(
         assistant_msg = Message(
             conversation_id=conversation.id,
             role="assistant",
-            content=state.get("response", ""),
+            content=state.get("response") or "",
             citations=state.get("citations"),
             agent_trace=state.get("agent_trace"),
-            model_used=state.get("token_usage", {}).get("model"),
+            model_used=token_usage.get("model"),
             latency_ms=state.get("total_latency_ms"),
             confidence_score=state.get("confidence_score"),
         )
@@ -116,25 +152,16 @@ async def chat(
         message_id = str(assistant_msg.id)
         await db.flush()
 
-    # Calculate token values and cost
-    tok_in = state.get("token_usage", {}).get("input", 0) if state.get("token_usage") else 0
-    tok_out = state.get("token_usage", {}).get("output", 0) if state.get("token_usage") else 0
-    cost_usd = (tok_in * 0.00015 / 1000) + (tok_out * 0.0006 / 1000)
-
-    # Determine hallucination score (simple heuristic: 1.0 - confidence_score)
-    conf_val = state.get("confidence_score", 0.0)
-    hallucination_score = round(1.0 - conf_val, 2) if conf_val is not None else None
-
     # Save QueryLog
     query_log = QueryLog(
         user_id=current_user.id if current_user else None,
         query_text=request.message,
         query_type="chat",
         intent=state.get("intent") or "general",
-        model_used=state.get("token_usage", {}).get("model") or request.model or settings.DEFAULT_LLM_MODEL,
+        model_used=token_usage.get("model") or request.model or settings.DEFAULT_LLM_MODEL,
         retrieval_strategy=state.get("retrieval_strategy") or "hybrid",
         results_count=len(state.get("retrieved_chunks") or []),
-        latency_ms=state.get("total_latency_ms", 0),
+        latency_ms=state.get("total_latency_ms") or 0,
         token_input=tok_in,
         token_output=tok_out,
         cost_usd=cost_usd,
@@ -147,12 +174,12 @@ async def chat(
     return ChatResponse(
         conversation_id=str(conversation.id) if conversation else "",
         message_id=message_id,
-        response=state.get("response", ""),
-        citations=state.get("citations", []),
-        agent_trace=state.get("agent_trace", []),
-        confidence_score=state.get("confidence_score", 0),
-        latency_ms=state.get("total_latency_ms", 0),
-        token_usage=state.get("token_usage", {}),
+        response=state.get("response") or "",
+        citations=state.get("citations") or [],
+        agent_trace=state.get("agent_trace") or [],
+        confidence_score=conf_val,
+        latency_ms=state.get("total_latency_ms") or 0,
+        token_usage=token_usage,
     )
 
 
@@ -175,9 +202,10 @@ async def chat_stream(
     conversation = None
     history = []
 
-    if request.conversation_id and current_user:
+    conv_id = _to_uuid(request.conversation_id)
+    if conv_id and current_user:
         result = await db.execute(
-            select(Conversation).where(Conversation.id == request.conversation_id)
+            select(Conversation).where(Conversation.id == conv_id)
         )
         conversation = result.scalar_one_or_none()
         if conversation:
@@ -210,6 +238,10 @@ async def chat_stream(
 
     async def generate():
         try:
+            if current_user and not current_user.has_configured_llm_key():
+                yield f"data: {json.dumps({'type': 'error', 'error': 'No LLM API key configured. Please configure your API key in Settings or complete the API key setup modal.'})}\n\n"
+                return
+
             # 1. Try Redis cache lookup
             cached_data = await RedisCache.get(cache_key)
             if cached_data:
@@ -266,15 +298,22 @@ async def chat_stream(
 
             # 2. Cache MISS: Run full LangGraph pipeline
             logger.info("Redis Cache MISS. Running graph pipeline.")
-            state = {
+            user_keys = current_user.get_all_llm_api_keys() if current_user else {}
+            req_prov = request.provider or (current_user.preferences.get("default_llm_provider") if current_user and current_user.preferences else None) or settings.DEFAULT_LLM_PROVIDER
+            active_key = user_keys.get(req_prov) or (user_keys.get("gemini") if "gemini" in user_keys else None)
+
+            state: AgentState = {
                 "query": request.message,
                 "conversation_history": history,
                 "user_id": user_id,
                 "model": request.model,
-                "provider": request.provider,
+                "provider": req_prov,
+                "user_api_keys": user_keys,
+                "api_key": active_key,
                 "intent": None,
-                "intents": None,
-                "domain": None,
+                "intents": ["general"],
+                "domain": "general",
+                "escalation": {"escalated": False},
                 "rewritten_query": None,
                 "metadata_filters": None,
                 "sub_queries": None,
@@ -294,32 +333,33 @@ async def chat_stream(
                 "token_usage": None,
             }
 
-            final_state = state
+            final_state: Dict[str, Any] = dict(state)
 
             async for event in compiled_graph.astream(state):
                 for node_name, node_state in event.items():
-                    final_state.update(node_state)
+                    if isinstance(node_state, dict):
+                        final_state.update(node_state)
                     
                     if node_name == "query_understanding":
-                        intent_val = node_state.get("intent")
-                        domain_val = node_state.get("domain")
+                        intent_val = node_state.get("intent") if isinstance(node_state, dict) else None
+                        domain_val = node_state.get("domain") if isinstance(node_state, dict) else None
                         yield f"data: {json.dumps({'type': 'trace', 'content': f'🔍 Classified Intent: {intent_val} ({domain_val})'})}\n\n"
                     elif node_name == "parallel_retrieval":
                         yield f"data: {json.dumps({'type': 'trace', 'content': '🕸️ Running Knowledge Graph & Vector Search in parallel'})}\n\n"
                         # Stream graph results
-                        graph_results = node_state.get("graph_results")
+                        graph_results = node_state.get("graph_results") if isinstance(node_state, dict) else None
                         if graph_results:
                             yield f"data: {json.dumps({'type': 'graph', 'content': graph_results})}\n\n"
-                        chunks_len = len(node_state.get("retrieved_chunks") or [])
+                        chunks_len = len(node_state.get("retrieved_chunks") or []) if isinstance(node_state, dict) else 0
                         yield f"data: {json.dumps({'type': 'trace', 'content': f'📥 Retrieved {chunks_len} document contexts'})}\n\n"
                     elif node_name == "reranker":
                         yield f"data: {json.dumps({'type': 'trace', 'content': '🎯 Cross-encoder neural rerank complete'})}\n\n"
                     elif node_name == "verifier":
-                        conf_score = node_state.get("confidence_score")
+                        conf_score = node_state.get("confidence_score") if isinstance(node_state, dict) else None
                         yield f"data: {json.dumps({'type': 'trace', 'content': f'✅ Fact verification completed (Score: {conf_score})'})}\n\n"
 
             # Stream final response in small chunks for typing effect
-            response_text = final_state.get("response", "")
+            response_text = final_state.get("response") or ""
             if not response_text:
                 response_text = "No response generated by the agent pipeline."
 
@@ -332,6 +372,17 @@ async def chat_stream(
             yield f"data: {json.dumps({'type': 'citations', 'content': citations})}\n\n"
 
             # Save assistant message in DB & log query
+            raw_tokens = final_state.get("token_usage")
+            tok_dict: Dict[str, Any] = raw_tokens if isinstance(raw_tokens, dict) else {}
+            tok_in = int(tok_dict.get("input", 0) or 0)
+            tok_out = int(tok_dict.get("output", 0) or 0)
+            cost_usd = (tok_in * 0.00015 / 1000) + (tok_out * 0.0006 / 1000)
+
+            # Determine hallucination score
+            conf_raw = final_state.get("confidence_score")
+            conf_val = float(conf_raw) if isinstance(conf_raw, (int, float)) else 0.0
+            hallucination_score = round(1.0 - conf_val, 2) if isinstance(conf_raw, (int, float)) else None
+
             if conversation:
                 assistant_msg = Message(
                     conversation_id=conversation.id,
@@ -339,29 +390,20 @@ async def chat_stream(
                     content=response_text,
                     citations=citations,
                     agent_trace=final_state.get("agent_trace"),
-                    model_used=final_state.get("token_usage", {}).get("model") or model_name,
-                    confidence_score=final_state.get("confidence_score"),
+                    model_used=tok_dict.get("model") or model_name,
+                    confidence_score=conf_val,
                 )
                 db.add(assistant_msg)
-
-            # Calculate token values and cost
-            tok_in = final_state.get("token_usage", {}).get("input", 0) if final_state.get("token_usage") else 0
-            tok_out = final_state.get("token_usage", {}).get("output", 0) if final_state.get("token_usage") else 0
-            cost_usd = (tok_in * 0.00015 / 1000) + (tok_out * 0.0006 / 1000)
-
-            # Determine hallucination score
-            conf_val = final_state.get("confidence_score", 0.0)
-            hallucination_score = round(1.0 - conf_val, 2) if conf_val is not None else None
 
             query_log = QueryLog(
                 user_id=current_user.id if current_user else None,
                 query_text=request.message,
                 query_type="chat",
                 intent=final_state.get("intent") or "general",
-                model_used=final_state.get("token_usage", {}).get("model") or request.model or settings.DEFAULT_LLM_MODEL,
+                model_used=tok_dict.get("model") or request.model or settings.DEFAULT_LLM_MODEL,
                 retrieval_strategy=final_state.get("retrieval_strategy") or "hybrid",
                 results_count=len(final_state.get("retrieved_chunks") or []),
-                latency_ms=final_state.get("total_latency_ms", 0),
+                latency_ms=final_state.get("total_latency_ms") or 0,
                 token_input=tok_in,
                 token_output=tok_out,
                 cost_usd=cost_usd,
@@ -408,9 +450,10 @@ async def ai_chat_stream(
     conversation = None
     history = []
 
-    if request.conversation_id and current_user:
+    conv_id = _to_uuid(request.conversation_id)
+    if conv_id and current_user:
         result = await db.execute(
-            select(Conversation).where(Conversation.id == request.conversation_id)
+            select(Conversation).where(Conversation.id == conv_id)
         )
         conversation = result.scalar_one_or_none()
         if conversation:
@@ -447,6 +490,14 @@ async def ai_chat_stream(
         provider_used = "unknown"
 
         try:
+            if current_user and not current_user.has_configured_llm_key():
+                yield f"data: {json.dumps({'type': 'error', 'error': 'No LLM API key configured. Please configure your API key in Settings or complete the API key setup modal.'})}\n\n"
+                return
+
+            user_keys = current_user.get_all_llm_api_keys() if current_user else {}
+            req_prov = request.provider or (current_user.preferences.get("default_llm_provider") if current_user and current_user.preferences else None) or settings.DEFAULT_LLM_PROVIDER
+            active_key = user_keys.get(req_prov) or (user_keys.get("gemini") if "gemini" in user_keys else None)
+
             # Build LLM messages from conversation history
             llm_messages = [
                 LLMMessage(
@@ -465,10 +516,12 @@ async def ai_chat_stream(
             # Stream directly from LLM with automatic fallback (Gemini → Groq → OpenAI → ...)
             async for chunk in stream_with_fallback(
                 messages=llm_messages,
-                provider_name=request.provider or settings.DEFAULT_LLM_PROVIDER,
+                provider_name=req_prov,
                 model=request.model,
                 temperature=0.7,
                 max_tokens=4096,
+                api_key=active_key,
+                user_api_keys=user_keys,
             ):
                 full_response += chunk
                 yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
@@ -552,9 +605,12 @@ async def get_conversation_messages(
     current_user: User = Depends(get_current_user),
 ):
     """Get messages for a conversation."""
+    conv_id = _to_uuid(conversation_id)
+    if not conv_id:
+        return []
     result = await db.execute(
         select(Message)
-        .where(Message.conversation_id == conversation_id)
+        .where(Message.conversation_id == conv_id)
         .order_by(Message.created_at)
     )
     messages = result.scalars().all()

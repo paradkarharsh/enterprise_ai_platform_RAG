@@ -42,7 +42,7 @@ class BaseVectorStore(ABC):
 class ChromaStore(BaseVectorStore):
     """ChromaDB vector store."""
 
-    def __init__(self, collection_name: str = None):
+    def __init__(self, collection_name: Optional[str] = None):
         self.collection_name = collection_name or settings.CHROMA_COLLECTION
         self._client = None
         self._collection = None
@@ -90,24 +90,49 @@ class ChromaStore(BaseVectorStore):
 class FAISSStore(BaseVectorStore):
     """FAISS local vector store."""
 
-    def __init__(self, dimension: int = None, index_path: str = None):
+    def __init__(self, dimension: Optional[int] = None, index_path: Optional[str] = None):
         self.dimension = dimension or settings.EMBEDDING_DIMENSION
         self.index_path = index_path or settings.FAISS_INDEX_PATH
-        self._index = None
+        self._index: Any = None
         self._id_map: Dict[int, str] = {}
         self._text_map: Dict[str, str] = {}
         self._meta_map: Dict[str, dict] = {}
         self._counter = 0
 
-    def _get_index(self):
+    def _get_index(self) -> Any:
         if self._index is None:
-            import faiss
-            self._index = faiss.IndexFlatIP(self.dimension)  # Inner product (cosine after normalization)
+            try:
+                import faiss
+                self._index = faiss.IndexFlatIP(self.dimension)  # Inner product (cosine after normalization)
+            except ImportError:
+                import numpy as np
+                class NumpyIndexFallback:
+                    def __init__(self, dimension: int):
+                        self.dimension = dimension
+                        self.vectors = None
+                        self.ntotal = 0
+                    def add(self, x):
+                        if self.vectors is None:
+                            self.vectors = np.array(x, dtype=np.float32)
+                        else:
+                            self.vectors = np.vstack([self.vectors, np.array(x, dtype=np.float32)])
+                        self.ntotal = len(self.vectors)
+                    def search(self, q, k):
+                        if self.ntotal == 0 or self.vectors is None:
+                            return np.array([[]]), np.array([[]])
+                        sims = np.dot(self.vectors, q[0])
+                        top_k = min(k, self.ntotal)
+                        top_indices = np.argsort(sims)[::-1][:top_k]
+                        top_scores = sims[top_indices]
+                        return np.array([top_scores]), np.array([top_indices])
+                self._index = NumpyIndexFallback(self.dimension)
         return self._index
 
     async def add(self, ids, texts, embeddings, metadatas=None):
         import numpy as np
         index = self._get_index()
+        if index is None:
+            return
 
         vectors = np.array(embeddings, dtype=np.float32)
         # Normalize for cosine similarity
@@ -127,12 +152,14 @@ class FAISSStore(BaseVectorStore):
     async def search(self, query_embedding, top_k=10, filters=None) -> List[SearchResult]:
         import numpy as np
         index = self._get_index()
+        if index is None:
+            return []
 
         query = np.array([query_embedding], dtype=np.float32)
         norms = np.linalg.norm(query, axis=1, keepdims=True)
         query = query / (norms + 1e-10)
 
-        scores, indices = index.search(query, min(top_k, index.ntotal))
+        scores, indices = index.search(query, min(top_k, getattr(index, "ntotal", 0)))
 
         results = []
         for score, idx in zip(scores[0], indices[0]):
@@ -152,7 +179,7 @@ class FAISSStore(BaseVectorStore):
 
     async def count(self) -> int:
         index = self._get_index()
-        return index.ntotal
+        return int(getattr(index, "ntotal", 0)) if index is not None else 0
 
 
 class PineconeStore(BaseVectorStore):

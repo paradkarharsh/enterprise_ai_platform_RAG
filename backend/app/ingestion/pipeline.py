@@ -43,9 +43,9 @@ async def parse_pdf(file_path: str) -> ParsedDocument:
     try:
         import fitz  # PyMuPDF
         doc = fitz.open(file_path)
-        pages = []
+        pages: List[str] = []
         for page in doc:
-            pages.append(page.get_text())
+            pages.append(str(page.get_text() or ""))
         doc.close()
         return ParsedDocument(
             title=os.path.basename(file_path),
@@ -86,8 +86,9 @@ async def parse_pptx(file_path: str) -> ParsedDocument:
         for slide in prs.slides:
             texts = []
             for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text.strip():
-                    texts.append(shape.text)
+                text_val = getattr(shape, "text", "")
+                if text_val and text_val.strip():
+                    texts.append(text_val)
             slides.append("\n".join(texts))
         return ParsedDocument(
             title=os.path.basename(file_path),
@@ -170,7 +171,7 @@ async def parse_website(url: str) -> ParsedDocument:
             # Remove scripts and styles
             for element in soup(["script", "style", "nav", "footer", "header"]):
                 element.decompose()
-            title = soup.title.string if soup.title else url
+            title = (soup.title.string if soup.title and soup.title.string else None) or url
             text = soup.get_text(separator="\n", strip=True)
         return ParsedDocument(
             title=title,
@@ -225,9 +226,9 @@ async def parse_document(file_path: str) -> ParsedDocument:
 
 def chunk_text(
     text: str,
-    chunk_size: int = None,
-    chunk_overlap: int = None,
-    metadata: Dict[str, Any] = None,
+    chunk_size: Optional[int] = None,
+    chunk_overlap: Optional[int] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> List[TextChunk]:
     """Split text into overlapping chunks using recursive character splitting."""
     chunk_size = chunk_size or settings.CHUNK_SIZE

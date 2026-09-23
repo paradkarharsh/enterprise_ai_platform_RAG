@@ -3,7 +3,7 @@ LLM Provider Factory - Unified interface for Gemini, OpenAI, Claude, Ollama.
 Supports streaming, fallback chains, and configurable model selection.
 """
 import logging
-from typing import Optional, AsyncGenerator, List, Dict, Any
+from typing import Optional, AsyncGenerator, List, Dict, Any, cast
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 
@@ -54,7 +54,7 @@ class BaseLLMProvider(ABC):
         **kwargs,
     ) -> AsyncGenerator[str, None]:
         """Stream a response from the LLM."""
-        pass
+        yield ""  # pragma: no cover
 
     @abstractmethod
     def is_available(self) -> bool:
@@ -62,14 +62,17 @@ class BaseLLMProvider(ABC):
         pass
 
 
-_gemini_client = None
+_gemini_clients: Dict[str, Any] = {}
 
-def _get_gemini_client(api_key: str):
-    global _gemini_client
-    if _gemini_client is None:
+def _get_gemini_client(api_key: Optional[str] = None):
+    if not api_key:
+        api_key = settings.GEMINI_API_KEY
+    if not api_key:
+        raise ValueError("Gemini API key is required.")
+    if api_key not in _gemini_clients:
         from google import genai
-        _gemini_client = genai.Client(api_key=api_key)
-    return _gemini_client
+        _gemini_clients[api_key] = genai.Client(api_key=api_key)
+    return _gemini_clients[api_key]
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -77,12 +80,12 @@ class GeminiProvider(BaseLLMProvider):
 
     provider_name = "gemini"
 
-    def __init__(self):
-        self.api_key = settings.GEMINI_API_KEY
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or settings.GEMINI_API_KEY
         self.default_model = settings.DEFAULT_LLM_MODEL or "gemini-2.0-flash"
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) and not self.api_key.startswith("your_") and not self.api_key.startswith("change-")
 
     async def generate(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> LLMResponse:
         try:
@@ -181,12 +184,12 @@ class OpenAIProvider(BaseLLMProvider):
 
     provider_name = "openai"
 
-    def __init__(self):
-        self.api_key = settings.OPENAI_API_KEY
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or settings.OPENAI_API_KEY
         self.default_model = "gpt-4o"
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) and not self.api_key.startswith("your_") and not self.api_key.startswith("change-")
 
     async def generate(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> LLMResponse:
         from openai import AsyncOpenAI
@@ -232,12 +235,12 @@ class ClaudeProvider(BaseLLMProvider):
 
     provider_name = "claude"
 
-    def __init__(self):
-        self.api_key = settings.ANTHROPIC_API_KEY
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or settings.ANTHROPIC_API_KEY
         self.default_model = "claude-sonnet-4-20250514"
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) and not self.api_key.startswith("your_") and not self.api_key.startswith("change-")
 
     async def generate(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> LLMResponse:
         from anthropic import AsyncAnthropic
@@ -252,13 +255,17 @@ class ClaudeProvider(BaseLLMProvider):
             else:
                 chat_msgs.append({"role": msg.role, "content": msg.content})
 
-        response = await client.messages.create(
-            model=model_name,
-            system=system_msg,
-            messages=chat_msgs,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        create_kwargs: Dict[str, Any] = {
+            "model": model_name,
+            "messages": chat_msgs,
+            "max_tokens": max_tokens,
+        }
+        if system_msg:
+            create_kwargs["system"] = system_msg
+        if temperature is not None:
+            create_kwargs["temperature"] = temperature
+
+        response: Any = await client.messages.create(**create_kwargs)
 
         return LLMResponse(
             content=response.content[0].text,
@@ -269,25 +276,29 @@ class ClaudeProvider(BaseLLMProvider):
             finish_reason=response.stop_reason,
         )
 
-    async def stream(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs):
+    async def stream(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> AsyncGenerator[str, None]:
         from anthropic import AsyncAnthropic
         client = AsyncAnthropic(api_key=self.api_key)
 
         system_msg = ""
-        chat_msgs = []
+        chat_msgs: List[Dict[str, Any]] = []
         for msg in messages:
             if msg.role == "system":
                 system_msg = msg.content
             else:
                 chat_msgs.append({"role": msg.role, "content": msg.content})
 
-        async with client.messages.stream(
-            model=model or self.default_model,
-            system=system_msg,
-            messages=chat_msgs,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        ) as stream:
+        stream_kwargs: Dict[str, Any] = {
+            "model": model or self.default_model,
+            "messages": chat_msgs,
+            "max_tokens": max_tokens,
+        }
+        if system_msg:
+            stream_kwargs["system"] = system_msg
+        if temperature is not None:
+            stream_kwargs["temperature"] = temperature
+
+        async with client.messages.stream(**stream_kwargs) as stream:
             async for text in stream.text_stream:
                 yield text
 
@@ -297,12 +308,12 @@ class GroqProvider(BaseLLMProvider):
 
     provider_name = "groq"
 
-    def __init__(self):
-        self.api_key = settings.GROQ_API_KEY
-        self.default_model = "llama-3.1-8b-instant"
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or settings.GROQ_API_KEY
+        self.default_model = "groq/compound"
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) and not self.api_key.startswith("your_") and not self.api_key.startswith("change-")
 
     async def generate(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> LLMResponse:
         from groq import AsyncGroq
@@ -326,7 +337,7 @@ class GroqProvider(BaseLLMProvider):
             finish_reason=choice.finish_reason,
         )
 
-    async def stream(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs):
+    async def stream(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> AsyncGenerator[str, None]:
         from groq import AsyncGroq
         client = AsyncGroq(api_key=self.api_key)
 
@@ -385,7 +396,7 @@ class OllamaProvider(BaseLLMProvider):
                 token_output=data.get("eval_count", 0),
             )
 
-    async def stream(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs):
+    async def stream(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> AsyncGenerator[str, None]:
         import httpx
         model_name = model or self.default_model
 
@@ -424,12 +435,24 @@ class MockProvider(BaseLLMProvider):
         user_query = messages[-1].content if messages else "hello"
         system_msg = next((m.content for m in messages if m.role == "system"), "")
         
+        # 1. Verification agent JSON request
+        if "confidence_score" in system_msg and "relevance_scores" in system_msg:
+            return self._mock_verification_response(user_query)
+
+        # 2. Intent detection JSON request
+        if "Analyze the user query and return a JSON object" in system_msg or '"intents"' in system_msg:
+            return self._mock_intent_response(user_query)
+
+        # 3. Specialized agents coordinator JSON request
+        if "Select relevant specialized agents" in system_msg:
+            return '["knowledge_graph", "rag_retriever"]'
+
         # Extract context if present
         context = ""
         if "Context:" in system_msg:
             context = system_msg.split("Context:")[-1].strip()
         
-        # If there's context, generate a rich structured answer based on it
+        # If there's context, generate an accurate extractive answer based on query relevance
         if context and context != "No specific context found.":
             return self._synthesize_from_context(user_query, context)
         
@@ -446,115 +469,205 @@ class MockProvider(BaseLLMProvider):
         else:
             return self._no_context_response(user_query)
 
-    def _synthesize_from_context(self, query: str, context: str) -> str:
-        """Generate a rich, structured response from retrieved context chunks."""
+    def _mock_verification_response(self, prompt: str) -> str:
+        import json
         import re
+        query = ""
+        context = ""
+        if "Query:" in prompt:
+            parts = prompt.split("Retrieved Context:")
+            query = parts[0].replace("Query:", "").strip()
+            context = parts[1].strip() if len(parts) > 1 else ""
         
+        STOPWORDS = {"who", "what", "where", "when", "why", "how", "is", "are", "was", "were", "the", "a", "an", "in", "on", "of", "for", "to", "with", "at", "from", "by", "about"}
+        terms = [t for t in re.sub(r'[^\w\s]', '', query.lower()).split() if t and t not in STOPWORDS]
+        
+        chunks = [c.strip() for c in context.split("\n---\n") if c.strip()]
+        relevance_scores = []
+        for c in chunks:
+            c_lower = c.lower()
+            if terms:
+                overlap = sum(1 for t in terms if t in c_lower)
+                score = round(min(0.95, max(0.2, 0.4 + 0.55 * (overlap / len(terms)))), 2)
+            else:
+                score = 0.5
+            relevance_scores.append(score)
+        
+        confidence = max(relevance_scores) if relevance_scores else 0.5
+        return json.dumps({
+            "confidence_score": confidence,
+            "relevance_scores": relevance_scores,
+            "sufficient_context": confidence >= 0.5,
+            "potential_gaps": [] if confidence >= 0.5 else ["Detailed information missing in retrieved documents"]
+        })
+
+    def _mock_intent_response(self, query: str) -> str:
+        import json
+        q_lower = query.lower()
+        if any(w in q_lower for w in ["error", "bug", "crash", "install", "fail", "code"]):
+            intent = "technical"
+            domain = "it"
+        elif any(w in q_lower for w in ["price", "cost", "plan", "subscription", "feature", "product"]):
+            intent = "product"
+            domain = "sales"
+        elif any(w in q_lower for w in ["bill", "invoice", "refund", "charge"]):
+            intent = "billing"
+            domain = "finance"
+        elif any(w in q_lower for w in ["who", "what", "where", "when", "how", "why"]):
+            intent = "faq"
+            domain = "general"
+        else:
+            intent = "general"
+            domain = "general"
+            
+        return json.dumps({
+            "intents": [intent],
+            "domain": domain,
+            "sentiment": "neutral",
+            "urgency": "low",
+            "language": "en",
+            "rewritten_query": query,
+            "sub_queries": [],
+            "metadata_filters": {}
+        })
+
+    def _synthesize_from_context(self, query: str, context: str) -> str:
+        """Extractively and accurately synthesize an answer based on query relevance from retrieved context."""
+        import re
+
         # Parse source blocks from context
         sources = []
-        source_pattern = r'\[Source (\d+)\]\s*\(Score: ([\d.]+)\)\n(.*?)(?=\n\[Source |\n---\n|$)'
+        source_pattern = r'\[Source\s+(\d+)\]\s*([^\n(]*?)(?:\(Score:\s*([\d.]+)\))?\n(.*?)(?=\n\[Source|\n---\n|\Z)'
         matches = re.findall(source_pattern, context, re.DOTALL)
         
-        for match in matches:
-            source_num = int(match[0])
-            score = float(match[1])
-            content = match[2].strip()
-            if content:
+        for m in matches:
+            s_num = int(m[0])
+            s_title = m[1].strip() or f"Source {s_num}"
+            try:
+                s_score = float(m[2]) if m[2] else 0.5
+            except ValueError:
+                s_score = 0.5
+            s_content = m[3].strip()
+            if s_content:
                 sources.append({
-                    "number": source_num,
-                    "score": score,
-                    "content": content
+                    "number": s_num,
+                    "title": s_title,
+                    "score": s_score,
+                    "content": s_content
                 })
-        
-        # If no structured sources found, try simpler parsing
+
+        # Fallback simpler source regex if needed
         if not sources:
-            # Try splitting by [Source N] pattern
-            parts = re.split(r'\[Source (\d+)\]', context)
-            if len(parts) > 1:
-                for i in range(1, len(parts), 2):
-                    if i + 1 < len(parts):
-                        num = int(parts[i])
-                        content = parts[i + 1].strip()
-                        score_match = re.search(r'Score:\s*([\d.]+)', content)
-                        score = float(score_match.group(1)) if score_match else 0.0
-                        content = re.sub(r'Score:\s*[\d.]+\n?', '', content).strip()
-                        if content:
-                            sources.append({
-                                "number": num,
-                                "score": score,
-                                "content": content[:2000]  # Limit length
-                            })
-        
-        # Sort by score descending
-        sources.sort(key=lambda x: x["score"], reverse=True)
-        
-        # Build structured response
+            pattern = r'\[Source\s*(\d+)\]\s*(.*?)(?=\n\[Source|\Z)'
+            for m in re.finditer(pattern, context, re.DOTALL):
+                raw = m.group(2).strip()
+                score_match = re.search(r'Score:\s*([\d.]+)', raw)
+                score = float(score_match.group(1)) if score_match else 0.5
+                clean_content = re.sub(r'\(Score:\s*[\d.]+\)', '', raw).strip()
+                sources.append({
+                    "number": int(m.group(1)),
+                    "title": f"Source {m.group(1)}",
+                    "score": score,
+                    "content": clean_content
+                })
+
+        # Tokenize query for keyword extraction (ignore common stopwords)
+        STOPWORDS = {
+            "who", "what", "where", "when", "why", "how", "is", "are", "was", "were",
+            "the", "a", "an", "in", "on", "of", "for", "to", "with", "at", "from", "by",
+            "about", "tell", "me", "give", "please", "can", "you", "does", "do", "did",
+            "and", "or", "any", "some", "my", "your", "their", "its", "this", "that"
+        }
+        clean_q = re.sub(r'[^\w\s]', '', query.lower())
+        query_terms = [t for t in clean_q.split() if t and t not in STOPWORDS]
+        query_phrase = clean_q.strip()
+
+        # Break content into sections/paragraphs across all sources
+        best_sections: List[Dict[str, Any]] = []
+        for src in sources:
+            content = str(src.get("content") or "")
+            # Split by markdown headers or double newlines
+            paragraphs = re.split(r'\n(?=#{1,4}\s)|\n\n+', content)
+            for p in paragraphs:
+                p_clean = p.strip()
+                if not p_clean or len(p_clean) < 20:
+                    continue
+                p_lower = p_clean.lower()
+                
+                # Calculate relevance score for this paragraph/section
+                score = 0.0
+                matched_terms = [t for t in query_terms if t in p_lower]
+                
+                # Check for full query phrase
+                if query_phrase and len(query_phrase) > 3 and query_phrase in p_lower:
+                    score += 10.0
+                
+                # Check if heading contains query terms
+                first_line = p_clean.split("\n")[0].lower()
+                if first_line.startswith("#"):
+                    heading_matches = [t for t in query_terms if t in first_line]
+                    if heading_matches:
+                        score += 5.0 * len(heading_matches)
+                
+                # Term overlap
+                if query_terms:
+                    overlap_ratio = len(matched_terms) / len(query_terms)
+                    score += overlap_ratio * 4.0
+                
+                if score > 0.5:
+                    best_sections.append({
+                        "source_num": src["number"],
+                        "source_title": src.get("title", f"Source {src['number']}"),
+                        "score": score,
+                        "content": p_clean,
+                        "matched_terms": matched_terms
+                    })
+
+        # Sort sections by match score
+        best_sections.sort(key=lambda x: float(x.get("score") or 0.0), reverse=True)
+
         sections = []
         sections.append(f"# 📋 Answer: {query}")
         sections.append("")
-        sections.append("Based on the retrieved documents, here is a comprehensive answer:")
-        sections.append("")
-        
-        q = query.lower()
-        if "first ever international football match" in q:
-            sections.append("The first ever international football match was played between **Scotland and England on November 30, 1872**.")
+
+        if best_sections:
+            sections.append("Based on the retrieved documents, here is the verified information:")
             sections.append("")
-            sections.append("### Match Details")
-            sections.append("- **Location**: Hamilton Crescent, Partick, Scotland.")
-            sections.append("- **Result**: The match ended in a 0-0 draw.")
-            sections.append("- **Significance**: It is officially recognized by FIFA as the first international association football match.")
-            sections.append("")
-        elif "most centuries in test cricket" in q:
-            sections.append("**Sachin Tendulkar** holds the record for the most centuries in Test cricket.")
-            sections.append("")
-            sections.append("### Career Highlights")
-            sections.append("- **Test Centuries**: 51 centuries in 200 Test matches.")
-            sections.append("- **Total International Centuries**: He is the only player to have scored 100 international centuries across all formats.")
-            sections.append("- **Legacy**: Widely regarded as one of the greatest batsmen in the history of the sport.")
-            sections.append("")
-        elif "goat of cricket" in q:
-            sections.append("The title of 'Greatest of All Time' (GOAT) in cricket is often debated, but **Sir Donald Bradman** is universally recognized as the greatest batsman.")
-            sections.append("")
-            sections.append("### Why Bradman?")
-            sections.append("- **Test Average**: An astonishing 99.94, which remains completely unmatched in the sport's history.")
-            sections.append("- **Modern Contenders**: In the modern era, players like Sachin Tendulkar and Virat Kohli are frequently discussed in the GOAT conversation for their incredible longevity and run-scoring records.")
-            sections.append("")
-        elif "most icc world cups" in q:
-            sections.append("**Australia** has won the most ICC Cricket World Cups.")
-            sections.append("")
-            sections.append("### Championship Record")
-            sections.append("- **Total Wins**: 6 World Cup titles (1987, 1999, 2003, 2007, 2015, and 2023).")
-            sections.append("- **Dominance**: They even won three consecutive tournaments from 1999 to 2007, making them the most successful team in ODI World Cup history.")
-            sections.append("")
-        else:
-            if sources:
-                sections.append("Based on the retrieved context, here is the summarized information:")
+            seen_texts = set()
+            for sec in best_sections[:3]:
+                sec_text = str(sec.get("content") or "")
+                snippet = sec_text[:100].lower()
+                if snippet in seen_texts:
+                    continue
+                seen_texts.add(snippet)
+                sections.append(sec_text)
                 sections.append("")
-                # Create a synthesized answer from the top sources
-                top_contents = " ".join([s["content"][:1000] for s in sources[:3]])
-                summary_sentences = [s.strip() + "." for s in re.split(r'[.!?]+', top_contents) if len(s.strip()) > 40]
-                if summary_sentences:
-                    sections.append(" ".join(summary_sentences[:4]))
-                else:
-                    sections.append("Multiple relevant documents were found. Please refer to the citations for detailed information.")
+        else:
+            sections.append(f"The retrieved knowledge base documents do not contain specific information about **{query}**.")
+            sections.append("")
+            if sources:
+                sample_headings = []
+                for s in sources[:3]:
+                    s_text = str(s.get("content") or "")
+                    hdrs = [line.strip("# ").strip() for line in s_text.split("\n") if line.strip().startswith("#")][:2]
+                    sample_headings.extend(hdrs)
+                if sample_headings:
+                    sections.append(f"*The available documents in this context cover: {', '.join(sample_headings[:5])}.*")
+                    sections.append("")
+                sections.append("Please upload documentation relevant to your query or rephrase with available topics.")
                 sections.append("")
 
+        # Citations
         if sources:
-            # Citations
             sections.append("## 📚 Sources")
             sections.append("")
-            for src in sources[:3]:
-                sections.append(f"- **Source {src['number']}** — Relevance: {src['score']:.0%}")
+            for src in sources[:4]:
+                s_title = src.get("title") or f"Source {src['number']}"
+                sections.append(f"- **Source {src['number']} ({s_title})** — Relevance: {src['score']:.0%}")
             sections.append("")
-        
-        else:
-            sections.append("No specific sources could be parsed from the retrieved context.")
-            sections.append("")
-        
-        # Subtle footer
+
         sections.append("---")
         sections.append("*Response synthesized by Manthan AI using local retrieval (MockProvider — no external LLM API key configured).*")
-        
         return "\n".join(sections)
 
     def _gpt4_architecture_response(self) -> str:
@@ -791,7 +904,6 @@ Without indexed documents, the pipeline has nothing to retrieve.
 *Response synthesized by Manthan AI (MockProvider — no external LLM API key configured).*"""
 
     async def generate(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs):
-        from app.llm.factory import LLMResponse
         response_text = self._get_mock_response(messages)
         user_query = messages[-1].content if messages else ""
         return LLMResponse(
@@ -802,7 +914,7 @@ Without indexed documents, the pipeline has nothing to retrieve.
             token_output=len(response_text) // 4,
         )
 
-    async def stream(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs):
+    async def stream(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> AsyncGenerator[str, None]:
         response_text = self._get_mock_response(messages)
         for i in range(0, len(response_text), 8):
             yield response_text[i:i+8]
@@ -824,22 +936,45 @@ PROVIDERS = {
 FALLBACK_CHAIN = ["gemini", "groq", "openai", "claude", "ollama", "mock"]
 
 
-def get_llm_provider(provider: Optional[str] = None) -> BaseLLMProvider:
-    """Get an LLM provider instance. Falls back through the chain if requested provider is unavailable."""
+def get_provider_instance(
+    name: str,
+    api_key: Optional[str] = None,
+    user_api_keys: Optional[Dict[str, str]] = None
+) -> Optional[BaseLLMProvider]:
+    """Instantiate a provider with user-provided API key if available."""
+    if name not in PROVIDERS:
+        return None
+    cls = PROVIDERS[name]
+    key = None
+    if user_api_keys and isinstance(user_api_keys, dict):
+        key = user_api_keys.get(name)
+    if not key and api_key:
+        key = api_key
+    if key and name in ("gemini", "groq", "openai", "claude"):
+        return cast(Any, cls)(api_key=key)
+    return cls()
+
+
+def get_llm_provider(
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+    user_api_keys: Optional[Dict[str, str]] = None
+) -> BaseLLMProvider:
+    """Get an LLM provider instance with optional user API key. Falls back through the chain."""
     if provider and provider in PROVIDERS:
-        instance = PROVIDERS[provider]()
-        if instance.is_available():
+        instance = get_provider_instance(provider, api_key=api_key, user_api_keys=user_api_keys)
+        if instance and instance.is_available():
             return instance
         logger.warning("Provider '%s' is not available, trying fallback chain", provider)
 
     # Fallback chain
     for name in FALLBACK_CHAIN:
-        instance = PROVIDERS[name]()
-        if instance.is_available():
+        instance = get_provider_instance(name, api_key=api_key, user_api_keys=user_api_keys)
+        if instance and instance.is_available():
             logger.info("Using LLM provider: %s", name)
             return instance
 
-    raise RuntimeError("No LLM provider available. Please configure at least one API key or start Ollama.")
+    raise RuntimeError("No LLM provider available. Please configure an API key or start Ollama.")
 
 
 async def generate_with_fallback(
@@ -848,22 +983,24 @@ async def generate_with_fallback(
     model: Optional[str] = None,
     temperature: float = 0.7,
     max_tokens: int = 4096,
+    api_key: Optional[str] = None,
+    user_api_keys: Optional[Dict[str, str]] = None,
     **kwargs
 ) -> LLMResponse:
-    """Generate a response, falling back to other providers if the chosen one fails at runtime."""
+    """Generate a response using user-provided API keys, falling back to other providers if needed."""
     providers_to_try = []
     seen_names = set()
     if provider_name and provider_name in PROVIDERS:
-        inst = PROVIDERS[provider_name]()
-        if inst.is_available():
+        inst = get_provider_instance(provider_name, api_key=api_key, user_api_keys=user_api_keys)
+        if inst and inst.is_available():
             providers_to_try.append(inst)
             seen_names.add(provider_name)
     
     for name in FALLBACK_CHAIN:
         if name in seen_names:
             continue
-        inst = PROVIDERS[name]()
-        if inst.is_available():
+        inst = get_provider_instance(name, api_key=api_key, user_api_keys=user_api_keys)
+        if inst and inst.is_available():
             providers_to_try.append(inst)
             seen_names.add(name)
             
@@ -892,22 +1029,24 @@ async def stream_with_fallback(
     model: Optional[str] = None,
     temperature: float = 0.7,
     max_tokens: int = 4096,
+    api_key: Optional[str] = None,
+    user_api_keys: Optional[Dict[str, str]] = None,
     **kwargs
 ) -> AsyncGenerator[str, None]:
-    """Stream a response, falling back to other providers if the chosen one fails at runtime."""
+    """Stream a response using user-provided API keys, falling back to other providers if needed."""
     providers_to_try = []
     seen_names = set()
     if provider_name and provider_name in PROVIDERS:
-        inst = PROVIDERS[provider_name]()
-        if inst.is_available():
+        inst = get_provider_instance(provider_name, api_key=api_key, user_api_keys=user_api_keys)
+        if inst and inst.is_available():
             providers_to_try.append(inst)
             seen_names.add(provider_name)
     
     for name in FALLBACK_CHAIN:
         if name in seen_names:
             continue
-        inst = PROVIDERS[name]()
-        if inst.is_available():
+        inst = get_provider_instance(name, api_key=api_key, user_api_keys=user_api_keys)
+        if inst and inst.is_available():
             providers_to_try.append(inst)
             seen_names.add(name)
             
@@ -930,6 +1069,63 @@ async def stream_with_fallback(
             
     raise RuntimeError(f"All LLM providers failed to stream. Last error: {last_error}")
 
+
+async def validate_api_key(provider: str, api_key: str) -> bool:
+    """Test and validate that an API key is functional with the remote provider."""
+    if not api_key or not api_key.strip():
+        raise ValueError("API key cannot be empty.")
+    
+    prov = provider.lower().strip()
+    key = api_key.strip()
+    
+    if prov == "gemini":
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=key)
+        model_name = getattr(settings, "DEFAULT_LLM_MODEL", "gemini-2.0-flash") or "gemini-2.0-flash"
+        try:
+            resp = await client.aio.models.generate_content(
+                model=model_name,
+                contents="ping",
+                config=types.GenerateContentConfig(max_output_tokens=5),
+            )
+            return bool(resp and hasattr(resp, "text"))
+        except Exception as ex:
+            # If specific model name is deprecated or unavailable, verify key via models.list()
+            try:
+                models_iter = client.models.list()
+                return True
+            except Exception:
+                raise ex
+    elif prov == "groq":
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=key)
+        resp = await client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=5,
+        )
+        return bool(resp.choices)
+    elif prov == "openai":
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=key)
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=5,
+        )
+        return bool(resp.choices)
+    elif prov == "claude":
+        from anthropic import AsyncAnthropic
+        client = AsyncAnthropic(api_key=key)
+        resp = await client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=5,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        return bool(resp.content)
+    else:
+        raise ValueError(f"Unknown or unsupported provider: {provider}")
 
 
 def list_available_providers() -> List[Dict[str, Any]]:

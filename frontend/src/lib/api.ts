@@ -56,6 +56,28 @@ export const api = {
       request(`/auth/oauth/url/${provider}`),
     oauthCallback: (data: { code: string; provider: string }) =>
       request("/auth/oauth/callback", { method: "POST", body: data }),
+    getLlmKeys: (token: string) =>
+      request<{
+        has_api_key: boolean;
+        default_provider: string;
+        providers: Record<string, { configured: boolean; preview: string | null }>;
+      }>("/auth/llm-keys", { token }),
+    saveLlmKey: (
+      data: { provider: string; api_key: string; set_as_default?: boolean; validate_key?: boolean },
+      token: string
+    ) =>
+      request<{
+        status: string;
+        message: string;
+        has_api_key: boolean;
+        provider: string;
+        preview: string;
+      }>("/auth/llm-keys", { method: "POST", body: data, token }),
+    deleteLlmKey: (provider: string, token: string) =>
+      request<{ status: string; message: string; has_api_key: boolean }>(
+        `/auth/llm-keys/${provider}`,
+        { method: "DELETE", token }
+      ),
   },
 
   // Chat

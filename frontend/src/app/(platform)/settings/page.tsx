@@ -1,16 +1,82 @@
 "use client";
 import { motion } from "framer-motion";
-import { Key, Database, Shield, Save, Sun, Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
-import { useSettingsStore, useToastStore } from "@/lib/store";
+import {
+  Key, Database, Shield, Save, Sun, Eye, EyeOff,
+  CheckCircle2, AlertCircle, Trash2, Loader2, Sparkles, ExternalLink, Plus
+} from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { useSettingsStore, useToastStore, useAuthStore } from "@/lib/store";
+import { api } from "@/lib/api";
 
 export default function SettingsPage() {
   const { settings, saveSettings } = useSettingsStore();
   const { addToast } = useToastStore();
+  const { token, setHasApiKey } = useAuthStore();
 
   const [formSettings, setFormSettings] = useState(settings);
   const [saved, setSaved] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
+
+  // LLM API Keys state
+  const [llmKeysData, setLlmKeysData] = useState<{
+    has_api_key: boolean;
+    default_provider: string;
+    providers: Record<string, { configured: boolean; preview: string | null }>;
+  } | null>(null);
+  const [newKeyProvider, setNewKeyProvider] = useState("gemini");
+  const [newKeyValue, setNewKeyValue] = useState("");
+  const [showNewKey, setShowNewKey] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+
+  const fetchKeys = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await api.auth.getLlmKeys(token);
+      setLlmKeysData(data);
+      if (data.has_api_key) {
+        setHasApiKey(true);
+      }
+    } catch (err) {
+      console.error("Failed to load LLM keys:", err);
+    }
+  }, [token, setHasApiKey]);
+
+  useEffect(() => {
+    fetchKeys();
+  }, [fetchKeys]);
+
+  const handleSaveLlmKey = async () => {
+    if (!newKeyValue.trim()) {
+      setKeyError("Please enter an API key.");
+      return;
+    }
+    setSavingKey(true);
+    setKeyError(null);
+    try {
+      const res = await api.auth.saveLlmKey(
+        { provider: newKeyProvider, api_key: newKeyValue.trim(), set_as_default: true, validate_key: true },
+        token!
+      );
+      addToast(res.message || "API key verified and saved successfully", "success");
+      setNewKeyValue("");
+      fetchKeys();
+    } catch (err: any) {
+      setKeyError(err.message || "Failed to validate key.");
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const handleDeleteLlmKey = async (provider: string) => {
+    if (!token) return;
+    try {
+      await api.auth.deleteLlmKey(provider, token);
+      addToast(`${provider.toUpperCase()} key removed`, "info");
+      fetchKeys();
+    } catch (err: any) {
+      addToast(err.message || "Failed to delete key", "error");
+    }
+  };
 
   const handleSave = () => {
     saveSettings(formSettings);
@@ -158,34 +224,155 @@ export default function SettingsPage() {
               </h3>
             </div>
             <div style={{ padding: "8px 0" }}>
-              {/* API Key */}
+              <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--slate-800)" }}>
+              <div className="mb-4">
+                <h4 style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>
+                  Personal AI API Keys (BYOK)
+                </h4>
+                <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  The platform runs on your personal LLM API keys. Keys are encrypted at rest using AES/HMAC and remembered across logins.
+                </p>
+              </div>
+
+              {/* Status List of Providers */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                {[
+                  { id: "gemini", name: "Google Gemini", free: true, link: "https://aistudio.google.com/app/apikey" },
+                  { id: "groq", name: "Groq", free: false, link: "https://console.groq.com/keys" },
+                  { id: "openai", name: "OpenAI", free: false, link: "https://platform.openai.com/api-keys" },
+                  { id: "claude", name: "Anthropic Claude", free: false, link: "https://console.anthropic.com/settings/keys" },
+                ].map((prov) => {
+                  const info = llmKeysData?.providers?.[prov.id];
+                  const isConfigured = info?.configured;
+                  return (
+                    <div
+                      key={prov.id}
+                      className="p-3 rounded-xl border flex items-center justify-between gap-3"
+                      style={{
+                        background: isConfigured ? "rgba(46, 91, 255, 0.05)" : "var(--bg-elevated)",
+                        borderColor: isConfigured ? "rgba(46, 91, 255, 0.3)" : "var(--slate-800)",
+                      }}
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)" }}>
+                            {prov.name}
+                          </span>
+                          {prov.free && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Free
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
+                          {isConfigured ? (
+                            <span className="font-mono text-emerald-400 flex items-center gap-1">
+                              <CheckCircle2 size={11} /> {info?.preview || "Configured"}
+                            </span>
+                          ) : (
+                            <a
+                              href={prov.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-400 hover:underline inline-flex items-center gap-0.5"
+                            >
+                              Get key <ExternalLink size={10} />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      {isConfigured && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteLlmKey(prov.id)}
+                          className="btn-ghost p-1.5 text-rose-400 hover:text-rose-300"
+                          title={`Remove ${prov.name} key`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Add / Update Key Form */}
               <div
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                className="p-4 rounded-xl border"
                 style={{
-                  padding: "12px 20px",
-                  borderBottom: "1px solid var(--slate-800)",
+                  background: "var(--bg-elevated)",
+                  borderColor: "var(--slate-800)",
                 }}
               >
-                <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--text-primary)" }}>
-                  API Key
-                </label>
-                <div style={{ display: "flex", gap: 6, width: "100%", maxWidth: 300 }}>
-                  <input
-                    type={showApiKey ? "text" : "password"}
-                    value={formSettings.apiKey}
-                    onChange={(e) => setFormSettings((prev) => ({ ...prev, apiKey: e.target.value }))}
-                    className="input"
-                    style={{ padding: "6px 10px", fontSize: "0.8125rem", flex: 1 }}
-                  />
-                  <button
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="btn-secondary"
-                    style={{ padding: "0 8px" }}
+                <div className="flex items-center gap-2 mb-3">
+                  <Plus size={14} className="text-blue-400" />
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)" }}>
+                    Add or Update Provider Key
+                  </span>
+                </div>
+
+                {keyError && (
+                  <div className="mb-3 p-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>{keyError}</span>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={newKeyProvider}
+                    onChange={(e) => setNewKeyProvider(e.target.value)}
+                    className="input sm:w-44 text-xs"
+                    style={{ padding: "8px 10px" }}
                   >
-                    {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    <option value="gemini">Google Gemini (Recommended)</option>
+                    <option value="groq">Groq</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="claude">Anthropic Claude</option>
+                  </select>
+
+                  <div className="flex-1 relative flex">
+                    <input
+                      type={showNewKey ? "text" : "password"}
+                      value={newKeyValue}
+                      onChange={(e) => {
+                        setNewKeyValue(e.target.value);
+                        setKeyError(null);
+                      }}
+                      placeholder={`Enter ${newKeyProvider.toUpperCase()} API key...`}
+                      className="input text-xs flex-1 pr-9"
+                      style={{ padding: "8px 10px" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewKey(!showNewKey)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    >
+                      {showNewKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveLlmKey}
+                    disabled={savingKey || !newKeyValue.trim()}
+                    className="btn-primary text-xs py-2 px-3 flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+                  >
+                    {savingKey ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        <span>Validating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Shield size={13} />
+                        <span>Validate & Save</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
+            </div>
 
               {/* Base URL */}
               <div

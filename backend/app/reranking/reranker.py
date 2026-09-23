@@ -68,6 +68,9 @@ class Reranker:
         top_k: int,
     ) -> List[Dict]:
         """Rerank using cross-encoder similarity scores."""
+        if self._model is None:
+            return self._rerank_tfidf(query, chunks, top_k)
+
         try:
             pairs = [(query, c.get("content", "")) for c in chunks]
             scores = self._model.predict(pairs)

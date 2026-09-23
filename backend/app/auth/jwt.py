@@ -32,7 +32,7 @@ try:
     if not hasattr(bcrypt, "__about__"):
         class BcryptAbout:
             __version__ = getattr(bcrypt, "__version__", "4.0.0")
-        bcrypt.__about__ = BcryptAbout()
+        setattr(bcrypt, "__about__", BcryptAbout())
 except ImportError:
     pass
 

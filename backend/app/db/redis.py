@@ -56,7 +56,10 @@ class RedisCache:
     @staticmethod
     async def get(key: str) -> Optional[str]:
         if redis_client:
-            return await redis_client.get(key)
+            val = await redis_client.get(key)
+            if isinstance(val, bytes):
+                return val.decode("utf-8")
+            return val
         return None
 
     @staticmethod

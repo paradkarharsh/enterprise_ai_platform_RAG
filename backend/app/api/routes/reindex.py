@@ -26,6 +26,8 @@ async def reindex_all(
 
         count = 0
         for doc in docs:
+            if not doc.file_path:
+                continue
             doc.status = DocumentStatus.PENDING
             doc.progress = 0
             doc.processing_stage = "queued"
@@ -65,7 +67,8 @@ async def reindex_document(
         doc.processing_stage = "queued"
         await db.commit()
 
-        background_tasks.add_task(process_document_task, doc.id, doc.file_path)
+        if doc.file_path:
+            background_tasks.add_task(process_document_task, doc.id, doc.file_path)
         return {"status": "reindex_queued", "document_id": document_id}
     except Exception as e:
         logger.error(f"Failed to queue reindexing for document {document_id}: {e}")

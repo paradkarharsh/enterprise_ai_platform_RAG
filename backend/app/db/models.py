@@ -101,6 +101,58 @@ class User(Base):
         Index("ix_users_oauth", "oauth_provider", "oauth_id"),
     )
 
+    def get_llm_api_key(self, provider: str = "gemini") -> Optional[str]:
+        """Retrieve decrypted LLM API key for the specified provider."""
+        from app.auth.crypto import decrypt_api_key
+        prefs = self.preferences or {}
+        keys = prefs.get("llm_api_keys", {})
+        enc_key = keys.get(provider.lower())
+        if enc_key:
+            try:
+                return decrypt_api_key(enc_key)
+            except Exception:
+                return None
+        return None
+
+    def get_all_llm_api_keys(self) -> dict:
+        """Retrieve all decrypted LLM API keys."""
+        from app.auth.crypto import decrypt_api_key
+        prefs = self.preferences or {}
+        keys = prefs.get("llm_api_keys", {})
+        result = {}
+        for prov, enc_key in keys.items():
+            try:
+                result[prov] = decrypt_api_key(enc_key)
+            except Exception:
+                pass
+        return result
+
+    def set_llm_api_key(self, provider: str, api_key: str, default: bool = True):
+        """Encrypt and save LLM API key for a provider in user preferences."""
+        from app.auth.crypto import encrypt_api_key
+        prefs = dict(self.preferences or {})
+        keys = dict(prefs.get("llm_api_keys", {}))
+        keys[provider.lower()] = encrypt_api_key(api_key.strip())
+        prefs["llm_api_keys"] = keys
+        if default or "default_llm_provider" not in prefs:
+            prefs["default_llm_provider"] = provider.lower()
+        self.preferences = prefs
+
+    def delete_llm_api_key(self, provider: str):
+        """Remove an LLM API key for a provider."""
+        prefs = dict(self.preferences or {})
+        keys = dict(prefs.get("llm_api_keys", {}))
+        if provider.lower() in keys:
+            del keys[provider.lower()]
+            prefs["llm_api_keys"] = keys
+            self.preferences = prefs
+
+    def has_configured_llm_key(self) -> bool:
+        """Check if user has at least one configured LLM API key."""
+        prefs = self.preferences or {}
+        keys = prefs.get("llm_api_keys", {})
+        return bool(keys and any(v for v in keys.values()))
+
 
 class APIKey(Base):
     __tablename__ = "api_keys"

@@ -2,7 +2,7 @@
 Intent Detection Agent.
 Identifies user intent, domain, sentiment, urgency, and language.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 import json
 from app.llm.factory import generate_with_fallback, LLMMessage
@@ -11,8 +11,10 @@ logger = logging.getLogger(__name__)
 
 async def detect_intent(
     query: str, 
-    provider: str = None, 
-    model: str = None
+    provider: Optional[str] = None, 
+    model: Optional[str] = None,
+    user_api_keys: Optional[Dict[str, str]] = None,
+    api_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """Detects multiple attributes of the user query."""
     
@@ -42,6 +44,8 @@ Return ONLY valid JSON.
             model=model,
             temperature=0.1,
             max_tokens=1024,
+            api_key=api_key,
+            user_api_keys=user_api_keys,
         )
         content = response.content.strip()
         if content.startswith("```"):

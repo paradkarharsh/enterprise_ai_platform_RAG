@@ -6,7 +6,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 // ── Auth Store ──
-interface User {
+export interface User {
   id: string;
   email: string;
   username: string;
@@ -14,6 +14,8 @@ interface User {
   avatar_url?: string;
   role: string;
   organization_id?: string;
+  has_api_key?: boolean;
+  default_provider?: string;
 }
 
 interface Organization {
@@ -27,6 +29,7 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   setAuth: (user: User, token: string, org?: Organization) => void;
+  setHasApiKey: (hasKey: boolean) => void;
   logout: () => void;
 }
 
@@ -38,6 +41,10 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       isAuthenticated: false,
       setAuth: (user, token, org) => set({ user, token, organization: org || null, isAuthenticated: true }),
+      setHasApiKey: (hasKey) =>
+        set((state) => ({
+          user: state.user ? { ...state.user, has_api_key: hasKey } : null,
+        })),
       logout: () => set({ user: null, token: null, organization: null, isAuthenticated: false }),
     }),
     { name: "auth-storage" }

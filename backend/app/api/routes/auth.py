@@ -46,9 +46,18 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     created_at: str
+    has_api_key: bool = False
+    default_provider: Optional[str] = "gemini"
 
     class Config:
         from_attributes = True
+
+
+class SaveLLMKeyRequest(BaseModel):
+    provider: str  # gemini, groq, openai, claude
+    api_key: str
+    set_as_default: bool = True
+    validate_key: bool = True
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -174,4 +183,89 @@ async def get_me(current_user: User = Depends(get_current_user)):
         role=current_user.role.value,
         is_active=current_user.is_active,
         created_at=current_user.created_at.isoformat() if current_user.created_at else "",
+        has_api_key=current_user.has_configured_llm_key(),
+        default_provider=(current_user.preferences or {}).get("default_llm_provider", "gemini"),
     )
+
+
+@router.get("/llm-keys")
+async def get_llm_keys(current_user: User = Depends(get_current_user)):
+    """Get status of user's configured LLM API keys (masked for safety)."""
+    from app.auth.crypto import mask_api_key
+    keys = current_user.get_all_llm_api_keys()
+    providers_status = {}
+    for prov in ["gemini", "groq", "openai", "claude"]:
+        raw = keys.get(prov)
+        providers_status[prov] = {
+            "configured": bool(raw),
+            "preview": mask_api_key(raw) if raw else None,
+        }
+    default_prov = (current_user.preferences or {}).get("default_llm_provider", "gemini")
+    return {
+        "has_api_key": current_user.has_configured_llm_key(),
+        "default_provider": default_prov,
+        "providers": providers_status,
+    }
+
+
+@router.post("/llm-keys")
+async def save_llm_key(
+    request: SaveLLMKeyRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Save and validate a user's personal LLM API key."""
+    provider = request.provider.lower().strip()
+    raw_key = request.api_key.strip()
+    if not raw_key:
+        raise HTTPException(status_code=400, detail="API key cannot be empty")
+
+    if request.validate_key:
+        from app.llm.factory import validate_api_key
+        try:
+            is_valid = await validate_api_key(provider, raw_key)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Validation ping failed for {provider}. Please ensure your API key is active."
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning("API key validation failed: %s", e)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid {provider.title()} API key: {str(e)}"
+            )
+
+    current_user.set_llm_api_key(provider, raw_key, default=request.set_as_default)
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+
+    from app.auth.crypto import mask_api_key
+    return {
+        "status": "success",
+        "message": f"{provider.title()} API key verified and saved successfully.",
+        "has_api_key": current_user.has_configured_llm_key(),
+        "provider": provider,
+        "preview": mask_api_key(raw_key),
+    }
+
+
+@router.delete("/llm-keys/{provider}")
+async def delete_llm_key(
+    provider: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a user's configured LLM API key."""
+    prov = provider.lower().strip()
+    current_user.delete_llm_api_key(prov)
+    db.add(current_user)
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"{prov.title()} API key removed.",
+        "has_api_key": current_user.has_configured_llm_key(),
+    }

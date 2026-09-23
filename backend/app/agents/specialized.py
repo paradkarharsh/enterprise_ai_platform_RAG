@@ -1,7 +1,7 @@
 """
 Specialized Domain Agents for Customer Support.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 from app.llm.factory import generate_with_fallback, LLMMessage
 
@@ -12,8 +12,8 @@ async def call_specialized_agent(
     query: str, 
     context: str, 
     history: List[Dict[str, str]], 
-    provider: str = None, 
-    model: str = None
+    provider: Optional[str] = None, 
+    model: Optional[str] = None
 ) -> str:
     """Invokes a specialized agent with its specific prompt."""
     

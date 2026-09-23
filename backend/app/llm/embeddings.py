@@ -2,7 +2,7 @@
 Embedding providers: BGE Large, E5 Large, OpenAI Embeddings.
 """
 import logging
-from typing import List, Optional
+from typing import List, Optional, Any, cast
 from abc import ABC, abstractmethod
 import numpy as np
 from app.config import get_settings
@@ -30,9 +30,9 @@ class BaseEmbeddingProvider(ABC):
 class OpenAIEmbeddings(BaseEmbeddingProvider):
     """OpenAI embedding models."""
 
-    def __init__(self, model: str = "text-embedding-3-small"):
+    def __init__(self, model: str = "text-embedding-3-small", api_key: Optional[str] = None):
         self.model = model
-        self.api_key = settings.OPENAI_API_KEY
+        self.api_key = api_key or settings.OPENAI_API_KEY
         self._dimension = 1536
 
     def dimension(self) -> int:
@@ -77,7 +77,7 @@ class HuggingFaceEmbeddings(BaseEmbeddingProvider):
 
     def __init__(self, model_name: str = "BAAI/bge-large-en-v1.5"):
         self.model_name = model_name
-        self._model = None
+        self._model: Any = None
         self._dimension = 1024  # BGE large default
 
     def _load_model(self):
@@ -99,11 +99,13 @@ class HuggingFaceEmbeddings(BaseEmbeddingProvider):
 
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         self._load_model()
+        assert self._model is not None
         embeddings = self._model.encode(texts, normalize_embeddings=True)
         return embeddings.tolist()
 
     async def embed_query(self, query: str) -> List[float]:
         self._load_model()
+        assert self._model is not None
         # BGE models benefit from instruction prefix for queries
         if "bge" in self.model_name.lower():
             query = f"Represent this sentence for searching relevant passages: {query}"
@@ -158,9 +160,9 @@ class MockEmbeddings(BaseEmbeddingProvider):
 class GeminiEmbeddings(BaseEmbeddingProvider):
     """Google Gemini embedding models."""
 
-    def __init__(self, model: str = "models/gemini-embedding-2"):
+    def __init__(self, model: str = "models/gemini-embedding-2", api_key: Optional[str] = None):
         self.model = model
-        self.api_key = settings.GEMINI_API_KEY
+        self.api_key = api_key or settings.GEMINI_API_KEY
         self._dimension = settings.EMBEDDING_DIMENSION  # Respect configured dimension (default 1024)
 
     def dimension(self) -> int:
@@ -175,18 +177,20 @@ class GeminiEmbeddings(BaseEmbeddingProvider):
 
         client = genai.Client(api_key=self.api_key)
 
-        def _embed():
-            embeddings = []
+        def _embed() -> List[List[float]]:
+            embeddings: List[List[float]] = []
             batch_size = 50
             for j in range(0, len(texts), batch_size):
                 batch = texts[j:j + batch_size]
                 response = client.models.embed_content(
                     model=self.model,
-                    contents=batch,
+                    contents=cast(Any, batch),
                     config={"output_dimensionality": self._dimension}
                 )
-                for emb in response.embeddings:
-                    embeddings.append(emb.values)
+                if response.embeddings:
+                    for emb in response.embeddings:
+                        if emb and emb.values:
+                            embeddings.append([float(x) for x in emb.values])
             return embeddings
 
         return await asyncio.to_thread(_embed)
@@ -201,16 +205,16 @@ class GeminiEmbeddings(BaseEmbeddingProvider):
 # ─────────────────────────────────────────────
 
 EMBEDDING_PROVIDERS = {
-    "openai": lambda: OpenAIEmbeddings(),
-    "gemini": lambda: GeminiEmbeddings(),
-    "bge-large": lambda: HuggingFaceEmbeddings("BAAI/bge-large-en-v1.5"),
-    "e5-large": lambda: HuggingFaceEmbeddings("intfloat/e5-large-v2"),
-    "mock": lambda: MockEmbeddings(settings.EMBEDDING_DIMENSION),
+    "openai": lambda key=None: OpenAIEmbeddings(api_key=key),
+    "gemini": lambda key=None: GeminiEmbeddings(api_key=key),
+    "bge-large": lambda key=None: HuggingFaceEmbeddings("BAAI/bge-large-en-v1.5"),
+    "e5-large": lambda key=None: HuggingFaceEmbeddings("intfloat/e5-large-v2"),
+    "mock": lambda key=None: MockEmbeddings(settings.EMBEDDING_DIMENSION),
 }
 
 
-def get_embedding_provider(provider: Optional[str] = None) -> BaseEmbeddingProvider:
-    """Get an embedding provider instance."""
+def get_embedding_provider(provider: Optional[str] = None, api_key: Optional[str] = None) -> BaseEmbeddingProvider:
+    """Get an embedding provider instance with optional user API key."""
     name = provider or settings.DEFAULT_EMBEDDING_PROVIDER
     if name in EMBEDDING_PROVIDERS:
         try:
@@ -219,7 +223,7 @@ def get_embedding_provider(provider: Optional[str] = None) -> BaseEmbeddingProvi
                 if not is_model_cached(model_name):
                     logger.warning("Hugging Face model %s is not cached locally. Falling back to MockEmbeddings.", model_name)
                     return MockEmbeddings(settings.EMBEDDING_DIMENSION)
-            return EMBEDDING_PROVIDERS[name]()
+            return EMBEDDING_PROVIDERS[name](api_key)
         except Exception as e:
             logger.warning("Failed to initialize embedding provider '%s': %s. Falling back to mock.", name, e)
             return MockEmbeddings(settings.EMBEDDING_DIMENSION)

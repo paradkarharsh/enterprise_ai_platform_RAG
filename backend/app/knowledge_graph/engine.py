@@ -3,7 +3,7 @@ Knowledge Graph Engine - Neo4j operations, entity extraction, and Cypher generat
 """
 import logging
 import json
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, cast
 from pydantic import BaseModel
 from app.config import get_settings
 
@@ -69,7 +69,7 @@ class KnowledgeGraphEngine:
             return []
 
         with driver.session() as session:
-            result = session.run(query, params or {})
+            result = session.run(cast(Any, query), params or {})
             return [record.data() for record in result]
 
     async def add_entity(self, entity: Entity) -> str:
