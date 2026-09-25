@@ -110,7 +110,12 @@ export function ApiKeySetupModal() {
       setHasApiKey(true);
       addToast(res.message || "API key verified and saved successfully!", "success");
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to validate API key. Please verify your credentials.");
+      const msg = err?.message || "";
+      if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed")) {
+        setErrorMsg("Unable to connect to the backend server. Please verify your backend service is running and accessible.");
+      } else {
+        setErrorMsg(msg || "Failed to validate API key. Please verify your credentials.");
+      }
     } finally {
       setLoading(false);
     }
