@@ -55,7 +55,9 @@ export default function ChatPage() {
 
   const fetchSuggestedQuestions = useCallback(async () => {
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const API_BASE = typeof window !== "undefined"
+        ? (process.env.NEXT_PUBLIC_API_URL || "")
+        : (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -215,7 +217,9 @@ export default function ChatPage() {
 
     // ── AI Chat & Knowledge Base Streaming Mode ──
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const API_BASE = typeof window !== "undefined"
+        ? (process.env.NEXT_PUBLIC_API_URL || "")
+        : (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
       const controller = new AbortController();
       // Increased timeout to 150 seconds to accommodate slow cold-starts on Render free tier
       const timeoutId = setTimeout(() => controller.abort(), 150000);
@@ -357,7 +361,9 @@ export default function ChatPage() {
     });
 
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const API_BASE = typeof window !== "undefined"
+        ? (process.env.NEXT_PUBLIC_API_URL || "")
+        : (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
       const formData = new FormData();
       formData.append("file", file);
 

@@ -1,8 +1,10 @@
 /**
  * API Client for Enterprise AI Knowledge Platform backend.
  */
-// Connect directly to backend API URL (supports local localhost default or production Railway URL)
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Connect directly or via Next.js server-side rewrite proxy (supports private API_URL)
+const API_BASE = typeof window !== "undefined"
+  ? (process.env.NEXT_PUBLIC_API_URL || "")
+  : (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 const API_PREFIX = "/api/v1";
 
 type RequestOptions = {
