@@ -44,6 +44,22 @@ async def lifespan(app: FastAPI):
     await init_db()
     await init_redis()
 
+    # Auto-seed knowledge base if empty
+    try:
+        import asyncio
+        from scripts.seed_kb import seed_knowledge_base
+        from app.db.postgres import async_session
+        from app.db.models import Document
+        from sqlalchemy import select, func
+        async with async_session() as session:
+            count_res = await session.execute(select(func.count()).select_from(Document))
+            doc_count = count_res.scalar() or 0
+        if doc_count == 0:
+            logger.info("📚 Knowledge base is empty. Triggering auto-seed of initial documents...")
+            asyncio.create_task(seed_knowledge_base())
+    except Exception as seed_err:
+        logger.warning("Auto-seed check skipped: %s", seed_err)
+
     logger.info("✅ All services initialized successfully")
     yield
 

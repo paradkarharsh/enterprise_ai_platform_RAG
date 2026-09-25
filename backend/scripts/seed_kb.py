@@ -17,41 +17,37 @@ from app.db.postgres import async_session, engine, init_db
 from app.db.models import Document, Chunk, SourceType, DocumentStatus, User
 from app.api.routes.upload import process_document_task, SOURCE_TYPE_MAP
 
-KB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../knowledge_base"))
+KB_DIR_LOCAL = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/knowledge_base"))
+KB_DIR_EXTERNAL = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../knowledge_base"))
+KB_DIR = KB_DIR_LOCAL if os.path.exists(KB_DIR_LOCAL) else KB_DIR_EXTERNAL
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../uploads"))
 
 
-async def seed():
-    print("Initializing database...")
-    await init_db()
+async def seed_knowledge_base(clear_existing: bool = False):
+    """Seed the knowledge base files, preserving existing documents by default."""
+    logger = logging.getLogger(__name__)
+    
+    if not os.path.exists(KB_DIR):
+        logger.warning(f"KB directory does not exist at {KB_DIR}")
+        return
 
-    # Find any existing user (or use None for ownerless public documents)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
     owner_id = None
     async with async_session() as session:
         result = await session.execute(select(User).limit(1))
         user = result.scalar_one_or_none()
         if user:
             owner_id = user.id
-            print(f"Found user: {user.username} ({user.id})")
-        else:
-            print("No users found — documents will be created without an owner (public).")
 
-        # Clear existing documents and chunks
-        print("Clearing existing documents and chunks...")
-        await session.execute(delete(Chunk))
-        await session.execute(delete(Document))
-        await session.commit()
-
-    # Get all markdown files in KB directory
-    print(f"\nReading files from {KB_DIR}...")
-    if not os.path.exists(KB_DIR):
-        print(f"Error: KB directory does not exist at {KB_DIR}")
-        return
+        if clear_existing:
+            logger.info("Clearing existing documents and chunks...")
+            await session.execute(delete(Chunk))
+            await session.execute(delete(Document))
+            await session.commit()
 
     kb_files = [f for f in os.listdir(KB_DIR) if f.endswith(".md") or f.endswith(".markdown")]
-    print(f"Found {len(kb_files)} files to ingest: {kb_files}\n")
-
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    logger.info(f"Found {len(kb_files)} files in KB directory: {kb_files}")
 
     success_count = 0
     fail_count = 0
@@ -60,15 +56,19 @@ async def seed():
         src_path = os.path.join(KB_DIR, filename)
         ext = os.path.splitext(filename)[1].lower()
 
+        # Check if already indexed
+        if not clear_existing:
+            async with async_session() as session:
+                existing = await session.execute(select(Document).where(Document.title == filename))
+                if existing.scalar_one_or_none():
+                    continue
+
         doc_id = uuid.uuid4()
         dest_filename = f"{doc_id}{ext}"
         dest_path = os.path.join(UPLOAD_DIR, dest_filename)
 
-        # Copy file to uploads folder
         shutil.copy2(src_path, dest_path)
         file_size = os.path.getsize(dest_path)
-
-        print(f"[{filename}] Registering document...")
 
         async with async_session() as session:
             doc = Document(
@@ -79,7 +79,7 @@ async def seed():
                 source_type=SOURCE_TYPE_MAP.get(ext, SourceType.MARKDOWN),
                 file_path=dest_path,
                 file_size=file_size,
-                file_hash=str(uuid.uuid4()),  # Dummy hash
+                file_hash=str(uuid.uuid4()),
                 mime_type="text/markdown",
                 status=DocumentStatus.PENDING,
                 progress=0,
@@ -88,18 +88,21 @@ async def seed():
             session.add(doc)
             await session.commit()
 
-        print(f"[{filename}] Running ingestion pipeline...")
         try:
             await process_document_task(doc_id, dest_path)
-            print(f"[{filename}] OK - Successfully indexed\n")
+            logger.info(f"[{filename}] Successfully indexed")
             success_count += 1
         except Exception as e:
-            print(f"[{filename}] FAILED - {e}\n")
+            logger.warning(f"[{filename}] Failed indexing: {e}")
             fail_count += 1
 
-    # Dispose database engine connections
+    logger.info(f"KB Seeding finished: {success_count} indexed, {fail_count} failed")
+
+
+async def seed():
+    await init_db()
+    await seed_knowledge_base(clear_existing=True)
     await engine.dispose()
-    print(f"Seeding completed! {success_count} indexed OK, {fail_count} failed")
 
 
 if __name__ == "__main__":

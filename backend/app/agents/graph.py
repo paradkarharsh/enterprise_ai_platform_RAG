@@ -257,6 +257,8 @@ Return ONLY valid JSON."""),
                 model=state.get("model"),
                 temperature=0.1,
                 max_tokens=512,
+                api_key=state.get("api_key"),
+                user_api_keys=state.get("user_api_keys"),
             )
             content = response.content.strip()
             if content.startswith("```"):
@@ -369,11 +371,10 @@ async def response_agent(state: AgentState) -> AgentState:
 {specialized_roles}
 
 Rules:
-1. Provide a comprehensive, natural, and direct answer to the user's query based ONLY on the provided context.
-2. Cite sources using [Source N] format.
-3. Format response in clear Markdown with headings, bullet points, and structured sections where appropriate, but prioritize conversational flow.
-4. If context is insufficient, say so honestly.
-5. Include a confidence level at the end.{escalation_msg}
+1. When relevant context documents are provided, base your answer on them and cite sources using [Source N] format.
+2. If the query cannot be answered from the provided documents, or no relevant documents were found, clearly state that no company documents were matched in the knowledge base, but provide a comprehensive, accurate answer to the query based on your general knowledge.
+3. Format response in clear Markdown with headings, bullet points, and structured sections where appropriate, prioritizing natural conversational flow.
+4. Include a confidence level at the end.{escalation_msg}
 
 Context:
 {context}"""),
