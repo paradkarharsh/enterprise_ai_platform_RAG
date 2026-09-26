@@ -157,9 +157,12 @@ async def retriever_agent(state: AgentState) -> AgentState:
 
     try:
         from app.retrieval.retriever import HybridRetriever
+        from app.llm.embeddings import get_embedding_provider
 
         query = state.get("rewritten_query") or state.get("query") or ""
-        retriever = HybridRetriever()
+        active_key = state.get("api_key") or (state.get("user_api_keys", {}).get("gemini") if state.get("user_api_keys") else None)
+        embedder = get_embedding_provider(api_key=active_key)
+        retriever = HybridRetriever(embedder=embedder)
 
         results = await retriever.retrieve(
             query=query,

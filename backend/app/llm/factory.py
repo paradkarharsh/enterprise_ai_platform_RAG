@@ -82,7 +82,7 @@ class GeminiProvider(BaseLLMProvider):
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.GEMINI_API_KEY
-        self.default_model = settings.DEFAULT_LLM_MODEL or "gemini-2.0-flash"
+        self.default_model = settings.DEFAULT_LLM_MODEL or "gemini-2.5-flash"
 
     def is_available(self) -> bool:
         return bool(self.api_key) and not self.api_key.startswith("your_") and not self.api_key.startswith("change-")
@@ -92,7 +92,9 @@ class GeminiProvider(BaseLLMProvider):
             client = _get_gemini_client(self.api_key)
             from google.genai import types
 
-            model_name = model or self.default_model
+            requested_model = model or self.default_model
+            if requested_model in ("gemini-2.0-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"):
+                requested_model = "gemini-2.5-flash"
 
             # Convert messages to Gemini format, prepending system instruction to the first user content
             contents = []
@@ -116,22 +118,34 @@ class GeminiProvider(BaseLLMProvider):
                 temperature=temperature,
             )
 
-            response = await client.aio.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=config,
-            )
+            models_to_try = [requested_model]
+            alt = "gemini-3.8-flash" if requested_model != "gemini-3.8-flash" else "gemini-2.5-flash"
+            if alt not in models_to_try:
+                models_to_try.append(alt)
 
-            prompt_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
-            candidate_tokens = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+            last_err = None
+            for current_model in models_to_try:
+                try:
+                    response = await client.aio.models.generate_content(
+                        model=current_model,
+                        contents=contents,
+                        config=config,
+                    )
 
-            return LLMResponse(
-                content=response.text,
-                model=model_name,
-                provider=self.provider_name,
-                token_input=prompt_tokens,
-                token_output=candidate_tokens,
-            )
+                    prompt_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+                    candidate_tokens = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+
+                    return LLMResponse(
+                        content=response.text,
+                        model=current_model,
+                        provider=self.provider_name,
+                        token_input=prompt_tokens,
+                        token_output=candidate_tokens,
+                    )
+                except Exception as ex:
+                    logger.warning("Gemini model '%s' failed: %s. Trying alternate model...", current_model, ex)
+                    last_err = ex
+            raise last_err
         except Exception as e:
             logger.error("Gemini generation failed: %s", e)
             raise
@@ -141,7 +155,9 @@ class GeminiProvider(BaseLLMProvider):
             client = _get_gemini_client(self.api_key)
             from google.genai import types
 
-            model_name = model or self.default_model
+            requested_model = model or self.default_model
+            if requested_model in ("gemini-2.0-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"):
+                requested_model = "gemini-2.5-flash"
 
             # Convert messages to Gemini format, prepending system instruction to the first user content
             contents = []
@@ -165,15 +181,28 @@ class GeminiProvider(BaseLLMProvider):
                 temperature=temperature,
             )
 
-            response_stream = await client.aio.models.generate_content_stream(
-                model=model_name,
-                contents=contents,
-                config=config,
-            )
+            models_to_try = [requested_model]
+            alt = "gemini-3.8-flash" if requested_model != "gemini-3.8-flash" else "gemini-2.5-flash"
+            if alt not in models_to_try:
+                models_to_try.append(alt)
 
-            async for chunk in response_stream:
-                if chunk.text:
-                    yield chunk.text
+            last_err = None
+            for current_model in models_to_try:
+                try:
+                    response_stream = await client.aio.models.generate_content_stream(
+                        model=current_model,
+                        contents=contents,
+                        config=config,
+                    )
+
+                    async for chunk in response_stream:
+                        if chunk.text:
+                            yield chunk.text
+                    return
+                except Exception as ex:
+                    logger.warning("Gemini model '%s' stream failed: %s. Trying alternate model...", current_model, ex)
+                    last_err = ex
+            raise last_err
         except Exception as e:
             logger.error("Gemini streaming failed: %s", e)
             raise
@@ -999,7 +1028,7 @@ async def generate_with_fallback(
     for name in FALLBACK_CHAIN:
         if name in seen_names:
             continue
-        inst = get_provider_instance(name, api_key=api_key, user_api_keys=user_api_keys)
+        inst = get_provider_instance(name, api_key=None, user_api_keys=user_api_keys)
         if inst and inst.is_available():
             providers_to_try.append(inst)
             seen_names.add(name)
@@ -1045,7 +1074,7 @@ async def stream_with_fallback(
     for name in FALLBACK_CHAIN:
         if name in seen_names:
             continue
-        inst = get_provider_instance(name, api_key=api_key, user_api_keys=user_api_keys)
+        inst = get_provider_instance(name, api_key=None, user_api_keys=user_api_keys)
         if inst and inst.is_available():
             providers_to_try.append(inst)
             seen_names.add(name)
@@ -1082,7 +1111,9 @@ async def validate_api_key(provider: str, api_key: str) -> bool:
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=key)
-        model_name = getattr(settings, "DEFAULT_LLM_MODEL", "gemini-2.0-flash") or "gemini-2.0-flash"
+        model_name = getattr(settings, "DEFAULT_LLM_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash"
+        if model_name in ("gemini-2.0-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"):
+            model_name = "gemini-2.5-flash"
         try:
             resp = await client.aio.models.generate_content(
                 model=model_name,

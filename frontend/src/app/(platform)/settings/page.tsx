@@ -418,7 +418,8 @@ export default function SettingsPage() {
                     maxWidth: 300,
                   }}
                 >
-                  <option value="gemini-2.0-flash">gemini-2.0-flash (default)</option>
+                  <option value="gemini-2.5-flash">gemini-2.5-flash (default)</option>
+                  <option value="gemini-3.8-flash">gemini-3.8-flash</option>
                   <option value="gpt-4o">gpt-4o</option>
                   <option value="claude-sonnet-4">claude-sonnet-4</option>
                 </select>

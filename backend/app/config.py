@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     DEFAULT_LLM_PROVIDER: str = "gemini"
-    DEFAULT_LLM_MODEL: str = "gemini-2.0-flash"
+    DEFAULT_LLM_MODEL: str = "gemini-2.5-flash"
 
     # Embeddings
     DEFAULT_EMBEDDING_PROVIDER: str = "openai"

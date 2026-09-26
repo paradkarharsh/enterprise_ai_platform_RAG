@@ -173,7 +173,8 @@ class GeminiEmbeddings(BaseEmbeddingProvider):
         from google import genai
         
         if not self.api_key:
-            raise RuntimeError("Gemini API key is not configured.")
+            logger.warning("Gemini API key is not configured for embeddings. Falling back to MockEmbeddings.")
+            return await MockEmbeddings(self._dimension).embed_texts(texts)
 
         client = genai.Client(api_key=self.api_key)
 

@@ -116,7 +116,7 @@ export const useChatStore = create<ChatState>((set) => ({
   activeConversationId: null,
   messages: [],
   isLoading: false,
-  selectedModel: "gemini-2.0-flash",
+  selectedModel: "gemini-2.5-flash",
   selectedProvider: "gemini",
   setConversations: (conversations) => set({ conversations }),
   setActiveConversation: (id) => set({ activeConversationId: id }),
@@ -200,7 +200,7 @@ interface SettingsState {
 const DEFAULT_SETTINGS: Settings = {
   apiKey: "sk-••••••••••••3f7a",
   baseUrl: "https://api.manthan.ai/v1",
-  model: "gemini-2.0-flash",
+  model: "gemini-2.5-flash",
   chunkSize: 512,
   overlap: 64,
   topK: 10,
